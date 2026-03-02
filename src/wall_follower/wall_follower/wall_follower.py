@@ -45,6 +45,7 @@ class WallFollower(Node):
 
         self.kp = 3.5
         self.kd = 2.2
+        self.ki = 1.0
 
         self.alpha = 0.3
 
@@ -56,6 +57,8 @@ class WallFollower(Node):
         self.distance = 0.0
         self.prev_error = 0.0
         self.prev_time = 0.0
+
+        self.error_sum = 0.0
 
         # self.get_logger().info('SIDE chosen: "%s"' % self.SIDE)
 
@@ -75,8 +78,20 @@ class WallFollower(Node):
         front_angles = angles[min_front_index:max_front_index]
         front_ranges = ranges[min_front_index:max_front_index]
 
-        front_x_values = front_ranges * np.cos(front_angles)
-        front_y_values = front_ranges * np.sin(front_angles)
+        # self.get_logger().info('Distances found "%s"' % front_ranges)
+
+        # dist_filt = front_ranges < 15.0
+
+        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+
+        # filt_front_angles = front_angles[dist_filt]
+        # filt_front_ranges = front_ranges[dist_filt]
+
+        if len(front_ranges) > 0:
+            front_x_values = front_ranges * np.cos(front_angles)
+            front_y_values = front_ranges * np.sin(front_angles)
+        else:
+            front_x_values = [1]
         return front_x_values, front_y_values
 
     def side_scan(self, ranges, angles):
@@ -92,11 +107,18 @@ class WallFollower(Node):
             max_filter_angle = (np.pi*10)/19
             max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
 
-        filtered_angles = angles[min_filter_index:max_filter_index]
-        filtered_ranges = ranges[min_filter_index:max_filter_index]
+        side_angles = angles[min_filter_index:max_filter_index]
+        side_ranges = ranges[min_filter_index:max_filter_index]
 
-        x_values = filtered_ranges * np.cos(filtered_angles)
-        y_values = filtered_ranges * np.sin(filtered_angles)
+        # dist_filt = side_ranges < 10.0
+
+        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+
+        # filtered_ranges = side_ranges[dist_filt]
+        # filtered_angles = side_angles[dist_filt]
+
+        x_values = side_ranges * np.cos(side_angles)
+        y_values = side_ranges * np.sin(side_angles)
         return x_values, y_values
     
     def distance_calc(self, x_values, y_values, front=False):
@@ -140,7 +162,9 @@ class WallFollower(Node):
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
         d_error = np.clip(d_error, -2.5, 2.5)
-        control_signal = error * self.kp + self.kd*(d_error)
+        self.error_sum = self.error_sum+error
+        self.error_sum = np.clip(self.error_sum, -10.0, 10.0)
+        control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
         if self.front_distance <= (1.3):
