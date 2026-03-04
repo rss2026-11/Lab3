@@ -17,7 +17,7 @@ class WallFollower(Node):
         # Declare parameters to make them available for use
         # DO NOT MODIFY THIS! 
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("drive_topic", "/drive")
+        self.declare_parameter("drive_topic", "/vesc/input/navigation")
         self.declare_parameter("side", 1)
         self.declare_parameter("velocity", 1.0)
         self.declare_parameter("desired_distance", 1.0)
@@ -45,7 +45,7 @@ class WallFollower(Node):
 
         self.kp = 3.5
         self.kd = 2.2
-        self.ki = 1.0
+        # self.ki = 1.0
 
         self.alpha = 0.3
 
@@ -164,7 +164,8 @@ class WallFollower(Node):
         d_error = np.clip(d_error, -2.5, 2.5)
         self.error_sum = self.error_sum+error
         self.error_sum = np.clip(self.error_sum, -10.0, 10.0)
-        control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
+        control_signal = error * self.kp + self.kd*(d_error)
+        # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
         if self.front_distance <= (1.3):
