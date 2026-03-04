@@ -1,12 +1,9 @@
 safety_controller:
   ros__parameters:
     scan_topic: "/scan"
-    drive_input_topic: "/drive_input"
-    drive_output_topic: "/drive"
+    incoming_cmd_topic: "/vesc/low_level/ackermann_cmd"
+    safety_output_topic: "/vesc/low_level/input/safety"
 
-    
-    safety_angle: 0.35
-
-    hard_stop_distance: 0.3
-
-    ttc_threshold: 0.8
+    stop_distance: 0.2
+    half_cone: 1.047
+    a_max: 4.0

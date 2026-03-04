@@ -1,11 +1,9 @@
 <launch>
-  <!-- Wall follower publishes to /drive_input instead of /drive -->
   <node pkg="wall_follower" name="wall_follower" exec="wall_follower" output="screen">
     <param from="$(find-pkg-share wall_follower)/params.yaml"/>
-    <param name="drive_topic" value="/drive_input"/>
+    <param name="drive_topic" value="/vesc/high_level/input/nav_0"/>
   </node>
 
-  <!-- Safety controller relays /drive_input -> /drive, overriding when unsafe -->
   <node pkg="safety_controller" name="safety_controller" exec="safety_controller" output="screen">
     <param from="$(find-pkg-share safety_controller)/params.yaml"/>
   </node>
