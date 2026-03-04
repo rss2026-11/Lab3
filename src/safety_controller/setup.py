@@ -28,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
             'safety_controller = safety_controller.safety_controller:main',
+            'safety_controller_tester = safety_controller.safety_controller_tester:main',
         ],
     },
 )

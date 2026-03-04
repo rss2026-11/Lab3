@@ -2,4 +2,5 @@
   <node pkg="safety_controller" name="safety_controller" exec="safety_controller" output="screen">
     <param from="$(find-pkg-share safety_controller)/params.yaml"/>
   </node>
+  <node pkg="safety_controller" name="safety_controller_tester" exec="safety_controller_tester" output="screen"/>
 </launch>
