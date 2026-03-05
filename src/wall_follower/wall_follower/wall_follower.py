@@ -158,7 +158,7 @@ class WallFollower(Node):
     def pd_controller_callback(self):
 
         error = self.DESIRED_DISTANCE - self.distance
-        self.get_logger().info("Distance found: " % self.distance)
+        self.get_logger().info('Distance found: "%s"' % self.distance)
         now = self.get_clock().now()
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
