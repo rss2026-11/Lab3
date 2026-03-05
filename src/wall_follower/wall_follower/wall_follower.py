@@ -13,11 +13,11 @@ from wall_follower.visualization_tools import VisualizationTools
 class WallFollower(Node):
 
     def __init__(self):
-        super().__init__("wall_follower_sim")
+        super().__init__("wall_follower")
         # Declare parameters to make them available for use
-        # DO NOT MODIFY THIS!
+        # DO NOT MODIFY THIS! 
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("drive_topic", "/drive")
+        self.declare_parameter("drive_topic", "/vesc/input/navigation")
         self.declare_parameter("side", 1)
         self.declare_parameter("velocity", 1.0)
         self.declare_parameter("desired_distance", 1.0)
@@ -29,150 +29,168 @@ class WallFollower(Node):
         self.SIDE = self.get_parameter('side').get_parameter_value().integer_value
         self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value
         self.DESIRED_DISTANCE = self.get_parameter('desired_distance').get_parameter_value().double_value
-
+		
         # This activates the parameters_callback function so that the tests are able
         # to change the parameters during testing.
-        # DO NOT MODIFY THIS!
+        # DO NOT MODIFY THIS! 
         self.add_on_set_parameters_callback(self.parameters_callback)
-
+  
         # TODO: Initialize your publishers and subscribers here
-        #Publisher for the drive
-        self.drive_pub = self.create_publisher(AckermannDriveStamped, self.DRIVE_TOPIC, 10)
-        #Subscriber to the LIDAR Scan
-        self.laser_sub = self.create_subscription(LaserScan, self.SCAN_TOPIC, self.scan_callback, 10)
-        #Create a line in Rviz
-        self.wall_pub = self.create_publisher(Marker, "/wall", 1)
-        # TODO: Write your callback functions here
-        self.error_sum = 0
-        self.prev_error = 0
+        self.publisher_ = self.create_publisher(AckermannDriveStamped, self.DRIVE_TOPIC, 10)
 
+        self.subscriber = self.create_subscription(LaserScan, self.SCAN_TOPIC, self.listener_callback, 10)
+        self.subscriber
 
-    def convert_lidar_cartesian(self, msg):
-        """
-        Convert LaserScan msg to cartesian coordinates
-        """
-        #Gets the ranges and angles from the LIDAR scan
+        self.line_vis = self.create_publisher(Marker, '/wall_line', 1)
+
+        self.kp = 3.5
+        self.kd = 2.2
+        # self.ki = 1.0
+
+        self.alpha = 0.3
+
+        self.publish_rate = 0.05
+        self.timer = self.create_timer(self.publish_rate, self.pd_controller_callback)
+        self.i = 0
+
+        self.front_distance = 0.0
+        self.distance = 0.0
+        self.prev_error = 0.0
+        self.prev_time = 0.0
+
+        self.error_sum = 0.0
+
+        # self.get_logger().info('SIDE chosen: "%s"' % self.SIDE)
+
+    def front_scan(self, ranges, angles):
+        # Front check
+        if (self.SIDE == -1):
+            min_front_angle = -np.pi/50
+            min_front_index = np.argmin(np.abs(angles - min_front_angle))
+            max_front_angle = np.pi/50
+            max_front_index = np.argmin(np.abs(angles - max_front_angle))
+        else: 
+            min_front_angle = -np.pi/50
+            min_front_index = np.argmin(np.abs(angles - min_front_angle))
+            max_front_angle = np.pi/50
+            max_front_index = np.argmin(np.abs(angles - max_front_angle))
+
+        front_angles = angles[min_front_index:max_front_index]
+        front_ranges = ranges[min_front_index:max_front_index]
+
+        # self.get_logger().info('Distances found "%s"' % front_ranges)
+
+        # dist_filt = front_ranges < 15.0
+
+        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+
+        # filt_front_angles = front_angles[dist_filt]
+        # filt_front_ranges = front_ranges[dist_filt]
+
+        if len(front_ranges) > 0:
+            front_x_values = front_ranges * np.cos(front_angles)
+            front_y_values = front_ranges * np.sin(front_angles)
+        else:
+            front_x_values = [1]
+        return front_x_values, front_y_values
+
+    def side_scan(self, ranges, angles):
+        # Side Check
+        if (self.SIDE == -1):
+            min_filter_angle = -(np.pi*10)/19
+            min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
+            max_filter_angle = -np.pi/6
+            max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
+        else:
+            min_filter_angle = np.pi/6
+            min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
+            max_filter_angle = (np.pi*10)/19
+            max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
+
+        side_angles = angles[min_filter_index:max_filter_index]
+        side_ranges = ranges[min_filter_index:max_filter_index]
+
+        # dist_filt = side_ranges < 10.0
+
+        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+
+        # filtered_ranges = side_ranges[dist_filt]
+        # filtered_angles = side_angles[dist_filt]
+
+        x_values = side_ranges * np.cos(side_angles)
+        y_values = side_ranges * np.sin(side_angles)
+        return x_values, y_values
+    
+    def distance_calc(self, x_values, y_values, front=False):
+        coefficients = np.polyfit(x_values, y_values, 1)
+
+        raw_distance = np.abs(coefficients[1]) / np.sqrt(coefficients[0]**2 + 1)
+
+        if front:
+            if self.front_distance == 0.0:
+                self.front_distance = raw_distance # Initialize on first run
+            else:
+                self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
+        else:
+            if self.distance == 0.0:
+                self.distance = raw_distance
+            else:
+                self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
+        
+
+    # TODO: Write your callback functions here   
+    def listener_callback(self, msg):
         ranges = np.array(msg.ranges)
         angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
 
-        # Ensure ranges and angles are the same length
-        min_len = min(len(ranges), len(angles))
-        ranges = ranges[:min_len]
-        angles = angles[:min_len]
+        # Front calculation
+        front_x_values, front_y_values = self.front_scan(ranges, angles)
+        # VisualizationTools.plot_line(x_values, y_values, self.line_vis)
 
-        # Convert to Cartesian logic
-        xs = ranges * np.cos(angles)
-        ys = ranges * np.sin(angles)
+        self.distance_calc(front_x_values, front_y_values, True)
 
-        return xs, ys
+        # Side calculation
+        x_values, y_values = self.side_scan(ranges, angles)
+        VisualizationTools.plot_line(x_values, y_values, self.line_vis)
 
+        self.distance_calc(x_values, y_values)
 
-    def filter_points(self, xs, ys):
-        """
-        Filter points to keep only the relevant wall points.
-        """
-        # 1. On the correct side
-        # 2. In front of the car, but not too far
-        # 3. Not too far to the side to avoid distractions
-        MAX_FORWARD_DIST = 15.0
-        MIN_FORWARD_DIST = 0.3
-        MAX_SIDE_DIST = 3.0
-        FRONT_CONE_DIST = 4.0
-        FRONT_CONE_WIDTH = 0.3
+    def pd_controller_callback(self):
 
-        side_wall = (
-            (ys * self.SIDE > 0) &                   # Correct Side
-            (xs > MIN_FORWARD_DIST) &                # Not behind
-            (xs < MAX_FORWARD_DIST) &                # Not too far ahead
-            (np.abs(ys) < MAX_SIDE_DIST)             # Within range laterally
-        )
-
-        front_cone = (
-            (ys * self.SIDE < 0) &
-            (xs > MIN_FORWARD_DIST) &
-            (xs < FRONT_CONE_DIST) &
-            (np.abs(ys) < FRONT_CONE_WIDTH)
-        )
-
-        valid_indices = side_wall | front_cone
-        return xs[valid_indices], ys[valid_indices]
-
-
-    def get_wall_regression(self, x, y):
-        """
-        Perform linear regression (least squares) on the points.
-        Returns: m (slope), b (intercept) of the line y = mx + b
-        """
-        if len(x) < 5:
-            return None, None
-
-        # It returns coefficients [m, b]
-        m, b = np.polyfit(x, y, 1)
-
-        return m, b
-
-
-    def PID_controller(self, error):
-        """
-        Creates a PID controller for the car to follow a desired a distance from the wall
-        """
-        Kp = 5.0
-        Ki = 0.1
-        Kd = 0.1
-        propotional = Kp * error
-        self.error_sum = np.clip(self.error_sum + error, -10.0, 10.0)
-        integral = Ki * self.error_sum
-        derivative = Kd * (error - self.prev_error)
+        error = self.DESIRED_DISTANCE - self.distance
+        now = self.get_clock().now()
+        dt = (now.nanoseconds - self.prev_time) / 1e9
+        d_error = (error - self.prev_error)/dt
+        d_error = np.clip(d_error, -2.5, 2.5)
+        self.error_sum = self.error_sum+error
+        self.error_sum = np.clip(self.error_sum, -10.0, 10.0)
+        control_signal = error * self.kp + self.kd*(d_error)
+        # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
-        return propotional + integral + derivative
+        self.prev_time = now.nanoseconds
+        if self.front_distance <= (1.3):
+            # self.get_logger().info("Front")
+            steer_angle = 2.0 * -(self.SIDE)
+            speed = min(1.8, self.VELOCITY * 0.8)
+        else:
+            # self.get_logger().info("Normal steering")
+            steer_angle = control_signal * -(self.SIDE)
+            speed = self.VELOCITY
 
-
-    def scan_callback(self, msg):
-        """
-        Callback function for LaserScan messages.
-        """
-        # 1. Convert to Cartesian
-        xs, ys = self.convert_lidar_cartesian(msg)
-
-        # # 2. Filter for wall points
-        wall_xs, wall_ys = self.filter_points(xs, ys)
-
-        # # 3. Regression
-        m, b = self.get_wall_regression(wall_xs, wall_ys)
-        # when m is empty you don't want car to crash out
-        if m is None:
-            return
-        # Creates a line to visualize the wall
-        viz_x = np.linspace(np.min(wall_xs), np.max(wall_xs), num=20)
-        viz_y = m * viz_x + b
-        VisualizationTools.plot_line(viz_x, viz_y, self.wall_pub, frame="/laser")
-
-        # determines distance from wall
-        current_distance = np.abs(b) / np.sqrt(m**2 + 1)
-        #current_distance = np.min(np.abs(wall_ys))
-
-        # calculates the error
-        error = self.DESIRED_DISTANCE - current_distance + 0.08
-        #self.get_logger().info(str(error))
-
-        # PID Controller output and converts that to steering angle
-        pid_output = self.PID_controller(error)
-        MAX_STEERING_ANGLE = 0.4
-        steering_angle = np.clip(-self.SIDE * pid_output, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE)
-
-        # 4. Drive command
         drive_msg = AckermannDriveStamped()
-        drive_msg.header = msg.header
-        drive_msg.drive.speed = self.VELOCITY
-        drive_msg.drive.steering_angle = steering_angle
-        self.drive_pub.publish(drive_msg)
+        drive_msg.header.stamp = now.to_msg()
+        drive_msg.drive.steering_angle = steer_angle
 
+        drive_msg.drive.steering_angle_velocity = 0.0
 
+        drive_msg.drive.speed = speed
+        self.publisher_.publish(drive_msg)
+    
     def parameters_callback(self, params):
         """
         DO NOT MODIFY THIS CALLBACK FUNCTION!
-
-        This is used by the test cases to modify the parameters during testing.
+        
+        This is used by the test cases to modify the parameters during testing. 
         It's called whenever a parameter is set via 'ros2 param set'.
         """
         for param in params:
@@ -198,3 +216,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
