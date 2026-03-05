@@ -174,8 +174,9 @@ class WallFollower(Node):
             steer_angle = 2.0 * -(self.SIDE)
             speed = min(1.8, self.VELOCITY * 0.8)
         else:
-            # self.get_logger().info("Normal steering")
+            self.get_logger().info("Normal steering")
             steer_angle = control_signal * -(self.SIDE)
+            # self.get_logger().info("")
             speed = self.VELOCITY
 
         drive_msg = AckermannDriveStamped()
