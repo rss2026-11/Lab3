@@ -99,7 +99,7 @@ class WallFollower(Node):
         if (self.SIDE == -1):
             min_filter_angle = -(np.pi*10)/19
             min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
-            max_filter_angle = -np.pi/6
+            max_filter_angle = -np.pi/4
             max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
         else:
             min_filter_angle = np.pi/6
@@ -158,6 +158,7 @@ class WallFollower(Node):
     def pd_controller_callback(self):
 
         error = self.DESIRED_DISTANCE - self.distance
+        self.get_logger().info("Distance found: " % self.distance)
         now = self.get_clock().now()
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
