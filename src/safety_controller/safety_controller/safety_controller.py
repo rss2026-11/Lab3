@@ -66,11 +66,11 @@ class SafetyController(Node):
         closest = np.min(cone_ranges)
         closest_angle_deg = math.degrees(cone_angles[np.argmin(cone_ranges)])
 
-       ## self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
+        self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
 
         # Step 6 — Layer 1: hard stop
         if closest < self.stop_distance:
-         ##   self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m / {closest_angle_deg:.1f}deg — publishing STOP")
+            self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m / {closest_angle_deg:.1f}deg — publishing STOP")
             stop_msg = AckermannDriveStamped()
             stop_msg.drive.speed = 0.0
             stop_msg.drive.steering_angle = 0.0
@@ -78,17 +78,11 @@ class SafetyController(Node):
             return
 
         # Step 7 — Layer 2: gradual braking
-        # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)
-           
-        m = 2.5 / 0.3
-        b = 0.5 - m * (0.5) 
-        
-        # calcualting brake distance
-        brake_distance = (self.current_speed - b) / m
+        brake_distance = (self.current_speed ** 2) / (2 * self.a_max)
 
         if closest - self.stop_distance < brake_distance:
             safe_speed = self.current_speed * (closest - self.stop_distance) / brake_distance
-           ## self.get_logger().warn(f"[BRAKING] {closest:.3f}m ahead — speed {self.current_speed:.3f} -> {safe_speed:.3f} m/s")
+            self.get_logger().warn(f"[BRAKING] {closest:.3f}m ahead — speed {self.current_speed:.3f} -> {safe_speed:.3f} m/s")
             brake_msg = AckermannDriveStamped()
             brake_msg.drive.speed = safe_speed
             brake_msg.drive.steering_angle = 0.0
