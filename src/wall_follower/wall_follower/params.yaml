@@ -4,4 +4,4 @@ wall_follower:
     drive_topic: "/vesc/input/navigation"
     side: -1
     velocity: 1.0
-    desired_distance: 1.
+    desired_distance: 0.5
