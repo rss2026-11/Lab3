@@ -86,12 +86,20 @@ class WallFollower(Node):
 
         # filt_front_angles = front_angles[dist_filt]
         # filt_front_ranges = front_ranges[dist_filt]
+        filt_front_angles = []
+        filt_front_ranges = []
+        for i in range(len(front_ranges)):
+            if front_ranges[i] > 0.12 and front_ranges[i] < 15.0:
+                filt_front_ranges.append(front_ranges[i])
+                filt_front_angles.append(front_angles[i])
 
-        if len(front_ranges) > 0:
-            front_x_values = front_ranges * np.cos(front_angles)
-            front_y_values = front_ranges * np.sin(front_angles)
+        if len(filt_front_angles) > 0:
+            front_x_values = filt_front_ranges * np.cos(filt_front_angles)
+            front_y_values = filt_front_ranges * np.sin(filt_front_angles)
         else:
             front_x_values = [1]
+            front_y_values = [1]
+
         return front_x_values, front_y_values
 
     def side_scan(self, ranges, angles):
