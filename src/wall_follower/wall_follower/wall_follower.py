@@ -135,17 +135,21 @@ class WallFollower(Node):
         coefficients = np.polyfit(x_values, y_values, 1)
 
         raw_distance = np.abs(coefficients[1]) / np.sqrt(coefficients[0]**2 + 1)
+        
 
         if front:
+            self.get_logger().info(f'FD found: {raw_distance}')
             if self.front_distance == 0.0:
                 self.front_distance = raw_distance # Initialize on first run
             else:
-                self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
+                # self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
+                self.front_distance = raw_distance
         else:
             if self.distance == 0.0:
                 self.distance = raw_distance
             else:
-                self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
+                # self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
+                self.distance = raw_distance
         
 
     # TODO: Write your callback functions here   
