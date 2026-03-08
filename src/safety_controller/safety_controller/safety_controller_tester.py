@@ -9,7 +9,7 @@ class SafetyControllerTester(Node):
         super().__init__("safety_controller_tester")
 
         self.pub = self.create_publisher(
-            AckermannDriveStamped,"/vesc/low_level/ackermann_cmd",10)
+            AckermannDriveStamped,"/vesc/high_level/input/nav_0",10)
 
         self.create_timer(0.05, self.publish_drive)  # 20Hz
         self.get_logger().info("Driving forward at 1.0 m/s — safety controller will handle stopping")

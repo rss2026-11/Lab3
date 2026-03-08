@@ -1,9 +1,9 @@
 safety_controller:
   ros__parameters:
     scan_topic: "/scan"
-    incoming_cmd_topic: "/vesc/low_level/ackermann_cmd"
+    incoming_cmd_topic: "/vesc/high_level/ackermann_cmd"
     safety_output_topic: "/vesc/low_level/input/safety"
 
-    stop_distance: 0.3
+    stop_distance: 0.5
     half_cone: 1.047
     a_max: 4.0
