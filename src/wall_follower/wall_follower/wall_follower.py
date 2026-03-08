@@ -43,6 +43,8 @@ class WallFollower(Node):
 
         self.line_vis = self.create_publisher(Marker, '/wall_line', 1)
 
+        self.front_line_vis = self.create_publisher(Marker, '/front_line', 1)
+
         self.kp = 3.5
         self.kd = 2.2
         # self.ki = 1.0
@@ -156,6 +158,7 @@ class WallFollower(Node):
         # VisualizationTools.plot_line(x_values, y_values, self.line_vis)
 
         self.distance_calc(front_x_values, front_y_values, True)
+        VisualizationTools.plot_line(front_x_values, front_y_values, self.front_line_vis)
 
         # Side calculation
         x_values, y_values = self.side_scan(ranges, angles)
