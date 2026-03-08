@@ -1,1 +1,0 @@
-/root/racecar_ws/src/Lab3/src/safety_controller/setup.py
