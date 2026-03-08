@@ -78,7 +78,11 @@ class SafetyController(Node):
             return
 
         # Step 7 — Layer 2: gradual braking
-        brake_distance = (self.current_speed ** 2) / (2 * self.a_max)
+        #brake_distance = (self.current_speed ** 2) / (2 * self.a_max)
+        m = 2.5/0.3
+        b = 0.5 - m*(0.5)
+        brake_distance = (self.current_speed-b)/m
+
 
         if closest - self.stop_distance < brake_distance:
             safe_speed = self.current_speed * (closest - self.stop_distance) / brake_distance
