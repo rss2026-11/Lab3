@@ -11,7 +11,7 @@ class SafetyControllerTester(Node):
 
         self.pub = self.create_publisher(
             AckermannDriveStamped,
-            "/vesc/low_level/ackermann_cmd",
+            "/vesc/high_level/input/nav_0",
             10
         )
 
