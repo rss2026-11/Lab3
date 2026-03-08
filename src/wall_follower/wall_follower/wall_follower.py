@@ -99,8 +99,8 @@ class WallFollower(Node):
             front_x_values = filt_front_ranges * np.cos(filt_front_angles)
             front_y_values = filt_front_ranges * np.sin(filt_front_angles)
         else:
-            front_x_values = [1]
-            front_y_values = [1]
+            front_x_values = [0.0]
+            front_y_values = [1.5]
 
         return front_x_values, front_y_values
 
@@ -135,7 +135,6 @@ class WallFollower(Node):
         coefficients = np.polyfit(x_values, y_values, 1)
 
         raw_distance = np.abs(coefficients[1]) / np.sqrt(coefficients[0]**2 + 1)
-        
 
         if front:
             self.get_logger().info(f'FD found: {raw_distance}')
@@ -174,7 +173,7 @@ class WallFollower(Node):
 
         error = self.DESIRED_DISTANCE - self.distance
         self.get_logger().info('Distance found: "%s"' % self.distance)
-        self.get_logger().info('FD found: "%s"' % self.front_distance)
+        # self.get_logger().info('FD found: "%s"' % self.front_distance)
         now = self.get_clock().now()
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
@@ -185,7 +184,7 @@ class WallFollower(Node):
         # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
-        if self.front_distance <= (1.3):
+        if self.front_distance <= (1.1):
             # self.get_logger().info("Front")
             steer_angle = 2.0 * -(self.SIDE)
             speed = min(1.8, self.VELOCITY * 0.8)
