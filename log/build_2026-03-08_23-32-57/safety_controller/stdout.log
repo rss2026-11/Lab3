@@ -1,0 +1,26 @@
+running develop
+running egg_info
+creating safety_controller.egg-info
+writing safety_controller.egg-info/PKG-INFO
+writing dependency_links to safety_controller.egg-info/dependency_links.txt
+writing entry points to safety_controller.egg-info/entry_points.txt
+writing requirements to safety_controller.egg-info/requires.txt
+writing top-level names to safety_controller.egg-info/top_level.txt
+writing manifest file 'safety_controller.egg-info/SOURCES.txt'
+reading manifest file 'safety_controller.egg-info/SOURCES.txt'
+writing manifest file 'safety_controller.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/racecar/racecar_ws/src/lab3/install/safety_controller/lib/python3.10/site-packages/safety-controller.egg-link (link to .)
+Installing safety_controller script to /home/racecar/racecar_ws/src/lab3/install/safety_controller/lib/safety_controller
+
+Installed /home/racecar/racecar_ws/src/lab3/build/safety_controller
+running symlink_data
+symbolically linking /home/racecar/racecar_ws/src/lab3/build/safety_controller/package.xml -> /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/safety_controller
+symbolically linking /home/racecar/racecar_ws/src/lab3/build/safety_controller/safety_controller/params.yaml -> /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/safety_controller
+creating /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/ament_index
+creating /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/ament_index/resource_index
+creating /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/ament_index/resource_index/packages
+symbolically linking /home/racecar/racecar_ws/src/lab3/build/safety_controller/resource/safety_controller -> /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/ament_index/resource_index/packages
+creating /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/safety_controller/launch
+symbolically linking /home/racecar/racecar_ws/src/lab3/build/safety_controller/launch/safety_with_wall_follower.launch.xml -> /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/safety_controller/launch
+symbolically linking /home/racecar/racecar_ws/src/lab3/build/safety_controller/launch/safety_controller.launch.xml -> /home/racecar/racecar_ws/src/lab3/install/safety_controller/share/safety_controller/launch
