@@ -53,6 +53,7 @@ class WallFollower(Node):
 
         self.publish_rate = 0.05
         self.timer = self.create_timer(self.publish_rate, self.pd_controller_callback)
+        # change from timer base to listener_callback based
         self.i = 0
 
         self.front_distance = 0.0
@@ -92,6 +93,7 @@ class WallFollower(Node):
         filt_front_ranges = []
         for i in range(len(front_ranges)):
             if front_ranges[i] > 0.12 and front_ranges[i] < 15.0:
+                # np percentile
                 filt_front_ranges.append(front_ranges[i])
                 filt_front_angles.append(front_angles[i])
 
@@ -169,14 +171,15 @@ class WallFollower(Node):
         self.distance_calc(x_values, y_values)
 
     def pd_controller_callback(self):
-
         error = self.DESIRED_DISTANCE - self.distance
+        # buffer error signal
         self.get_logger().info('Distance found: "%s"' % self.distance)
         # self.get_logger().info('FD found: "%s"' % self.front_distance)
         now = self.get_clock().now()
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
         d_error = np.clip(d_error, -2.5, 2.5)
+        # try without div by dt
         self.error_sum = self.error_sum+error
         self.error_sum = np.clip(self.error_sum, -10.0, 10.0)
         control_signal = error * self.kp + self.kd*(d_error)
