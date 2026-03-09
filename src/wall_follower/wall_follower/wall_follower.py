@@ -141,14 +141,14 @@ class WallFollower(Node):
             if self.front_distance == 0.0:
                 self.front_distance = raw_distance # Initialize on first run
             else:
-                # self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
-                self.front_distance = raw_distance
+                self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
+                # self.front_distance = raw_distance
         else:
             if self.distance == 0.0:
                 self.distance = raw_distance
             else:
-                # self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
-                self.distance = raw_distance
+                self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
+                # self.distance = raw_distance
         
 
     # TODO: Write your callback functions here   
@@ -158,7 +158,6 @@ class WallFollower(Node):
 
         # Front calculation
         front_x_values, front_y_values = self.front_scan(ranges, angles)
-        # VisualizationTools.plot_line(x_values, y_values, self.line_vis)
 
         self.distance_calc(front_x_values, front_y_values, True)
         VisualizationTools.plot_line(front_x_values, front_y_values, self.front_line_vis)
