@@ -15,7 +15,7 @@ class WallFollower(Node):
     def __init__(self):
         super().__init__("wall_follower")
         # Declare parameters to make them available for use
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("drive_topic", "/vesc/input/navigation")
         self.declare_parameter("side", -1)
@@ -29,12 +29,12 @@ class WallFollower(Node):
         self.SIDE = self.get_parameter('side').get_parameter_value().integer_value
         self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value
         self.DESIRED_DISTANCE = self.get_parameter('desired_distance').get_parameter_value().double_value
-		
+
         # This activates the parameters_callback function so that the tests are able
         # to change the parameters during testing.
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.add_on_set_parameters_callback(self.parameters_callback)
-  
+
         # TODO: Initialize your publishers and subscribers here
         self.publisher_ = self.create_publisher(AckermannDriveStamped, self.DRIVE_TOPIC, 10)
 
@@ -64,73 +64,123 @@ class WallFollower(Node):
 
         # self.get_logger().info('SIDE chosen: "%s"' % self.SIDE)
 
-    def front_scan(self, ranges, angles):
-        # Front check
-        if (self.SIDE == -1):
-            min_front_angle = -np.pi/50
-            min_front_index = np.argmin(np.abs(angles - min_front_angle))
-            max_front_angle = np.pi/50
-            max_front_index = np.argmin(np.abs(angles - max_front_angle))
-        else: 
-            min_front_angle = -np.pi/50
-            min_front_index = np.argmin(np.abs(angles - min_front_angle))
-            max_front_angle = np.pi/50
-            max_front_index = np.argmin(np.abs(angles - max_front_angle))
+    # def front_scan(self, ranges, angles):
+    #     # Front check
+    #     if (self.SIDE == -1):
+    #         min_front_angle = -np.pi/50
+    #         min_front_index = np.argmin(np.abs(angles - min_front_angle))
+    #         max_front_angle = np.pi/50
+    #         max_front_index = np.argmin(np.abs(angles - max_front_angle))
+    #     else:
+    #         min_front_angle = -np.pi/50
+    #         min_front_index = np.argmin(np.abs(angles - min_front_angle))
+    #         max_front_angle = np.pi/50
+    #         max_front_index = np.argmin(np.abs(angles - max_front_angle))
 
-        front_angles = angles[min_front_index:max_front_index]
-        front_ranges = ranges[min_front_index:max_front_index]
+    #     front_angles = angles[min_front_index:max_front_index]
+    #     front_ranges = ranges[min_front_index:max_front_index]
 
-        # self.get_logger().info('Distances found "%s"' % front_ranges)
+    #     # self.get_logger().info('Distances found "%s"' % front_ranges)
 
-        # dist_filt = front_ranges < 15.0
+    #     # dist_filt = front_ranges < 15.0
 
-        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+    #     # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
 
-        # filt_front_angles = front_angles[dist_filt]
-        # filt_front_ranges = front_ranges[dist_filt]
-        filt_front_angles = []
-        filt_front_ranges = []
-        for i in range(len(front_ranges)):
-            if front_ranges[i] > 0.12 and front_ranges[i] < 15.0:
-                filt_front_ranges.append(front_ranges[i])
-                filt_front_angles.append(front_angles[i])
+    #     # filt_front_angles = front_angles[dist_filt]
+    #     # filt_front_ranges = front_ranges[dist_filt]
+    #     filt_front_angles = []
+    #     filt_front_ranges = []
+    #     for i in range(len(front_ranges)):
+    #         if front_ranges[i] > 0.12 and front_ranges[i] < 15.0:
+    #             filt_front_ranges.append(front_ranges[i])
+    #             filt_front_angles.append(front_angles[i])
 
-        if len(filt_front_angles) > 0:
-            front_x_values = filt_front_ranges * np.cos(filt_front_angles)
-            front_y_values = filt_front_ranges * np.sin(filt_front_angles)
-        else:
-            front_x_values = [0.0]
-            front_y_values = [1.5]
+    #     if len(filt_front_angles) > 0:
+    #         front_x_values = filt_front_ranges * np.cos(filt_front_angles)
+    #         front_y_values = filt_front_ranges * np.sin(filt_front_angles)
+    #     else:
+    #         front_x_values = [0.0]
+    #         front_y_values = [1.5]
 
-        return front_x_values, front_y_values
+    #     return front_x_values, front_y_values
 
-    def side_scan(self, ranges, angles):
-        # Side Check
-        if (self.SIDE == -1):
-            min_filter_angle = -(np.pi*10)/19
-            min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
-            max_filter_angle = -np.pi/4
-            max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
-        else:
-            min_filter_angle = np.pi/6
-            min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
-            max_filter_angle = (np.pi*10)/19
-            max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
+    # def side_scan(self, ranges, angles):
+    #     # Side Check
+    #     if (self.SIDE == -1):
+    #         min_filter_angle = -(np.pi*10)/19
+    #         min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
+    #         max_filter_angle = -np.pi/4
+    #         max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
+    #     else:
+    #         min_filter_angle = np.pi/6
+    #         min_filter_index = np.argmin(np.abs(angles - min_filter_angle))
+    #         max_filter_angle = (np.pi*10)/19
+    #         max_filter_index = np.argmin(np.abs(angles - max_filter_angle))
 
-        side_angles = angles[min_filter_index:max_filter_index]
-        side_ranges = ranges[min_filter_index:max_filter_index]
+    #     side_angles = angles[min_filter_index:max_filter_index]
+    #     side_ranges = ranges[min_filter_index:max_filter_index]
 
-        # dist_filt = side_ranges < 10.0
+    #     # dist_filt = side_ranges < 10.0
 
-        # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
+    #     # self.get_logger().info('Distance indixes found: "%s"' % dist_filt)
 
-        # filtered_ranges = side_ranges[dist_filt]
-        # filtered_angles = side_angles[dist_filt]
+    #     # filtered_ranges = side_ranges[dist_filt]
+    #     # filtered_angles = side_angles[dist_filt]
 
-        x_values = side_ranges * np.cos(side_angles)
-        y_values = side_ranges * np.sin(side_angles)
-        return x_values, y_values
-    
+    #     x_values = side_ranges * np.cos(side_angles)
+    #     y_values = side_ranges * np.sin(side_angles)
+    #     return x_values, y_values
+
+    def convert_lidar_cartesian(self, msg):
+        """
+        Convert LaserScan msg to cartesian coordinates
+        """
+        #Gets the ranges and angles from the LIDAR scan
+        ranges = np.array(msg.ranges)
+        angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
+
+        # Ensure ranges and angles are the same length
+        min_len = min(len(ranges), len(angles))
+        ranges = ranges[:min_len]
+        angles = angles[:min_len]
+
+        # Convert to Cartesian logic
+        xs = ranges * np.cos(angles)
+        ys = ranges * np.sin(angles)
+
+        return xs, ys
+
+
+    def filter_points(self, xs, ys):
+        """
+        Filter points to keep only the relevant wall points.
+        """
+        # 1. On the correct side
+        # 2. In front of the car, but not too far
+        # 3. Not too far to the side to avoid distractions
+        MAX_FORWARD_DIST = 15.0
+        MIN_FORWARD_DIST = 0.3
+        MAX_SIDE_DIST = 3.0
+        FRONT_CONE_DIST = 4.0
+        FRONT_CONE_WIDTH = 0.3
+
+        side_wall = (
+            (ys * self.SIDE > 0) &                   # Correct Side
+            (xs > MIN_FORWARD_DIST) &                # Not behind
+            (xs < MAX_FORWARD_DIST) &                # Not too far ahead
+            (np.abs(ys) < MAX_SIDE_DIST)             # Within range laterally
+        )
+
+        front_cone = (
+            (ys * self.SIDE < 0) &
+            (xs > MIN_FORWARD_DIST) &
+            (xs < FRONT_CONE_DIST) &
+            (np.abs(ys) < FRONT_CONE_WIDTH)
+        )
+
+        valid_indices = side_wall | front_cone
+        return xs[valid_indices], ys[valid_indices]
+
     def distance_calc(self, x_values, y_values, front=False):
         coefficients = np.polyfit(x_values, y_values, 1)
 
@@ -149,24 +199,36 @@ class WallFollower(Node):
             else:
                 self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
                 # self.distance = raw_distance
-        
 
-    # TODO: Write your callback functions here   
+
     def listener_callback(self, msg):
-        ranges = np.array(msg.ranges)
-        angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
+        # ranges = np.array(msg.ranges)
+        # # angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
 
-        # Front calculation
-        front_x_values, front_y_values = self.front_scan(ranges, angles)
+        # # Front calculation
+        # front_x_values, front_y_values = self.front_scan(ranges, angles)
 
-        self.distance_calc(front_x_values, front_y_values, True)
-        VisualizationTools.plot_line(front_x_values, front_y_values, self.front_line_vis)
 
-        # Side calculation
-        x_values, y_values = self.side_scan(ranges, angles)
-        VisualizationTools.plot_line(x_values, y_values, self.line_vis)
+        # self.distance_calc(front_x_values, front_y_values, True)
+        # VisualizationTools.plot_line(front_x_values, front_y_values, self.front_line_vis)
 
-        self.distance_calc(x_values, y_values)
+        # # Side calculation
+        # x_values, y_values = self.side_scan(ranges, angles)
+        # VisualizationTools.plot_line(x_values, y_values, self.line_vis)
+         # 1. Convert to Cartesian
+        xs, ys = self.convert_lidar_cartesian(msg)
+
+        # # 2. Filter for wall points
+        wall_xs, wall_ys = self.filter_points(xs, ys)
+
+        # # 3. Regression
+
+        # Creates a line to visualize the wall
+        viz_x = np.linspace(np.min(wall_xs), np.max(wall_xs), num=20)
+        viz_y = np.linspace(np.min(wall_ys), np.max(wall_ys), num = 20)
+        VisualizationTools.plot_line(viz_x, viz_y, self.wall_pub, frame="/laser")
+
+        self.distance_calc(wall_xs, wall_ys)
 
     def pd_controller_callback(self):
 
@@ -201,12 +263,12 @@ class WallFollower(Node):
 
         drive_msg.drive.speed = speed
         self.publisher_.publish(drive_msg)
-    
+
     def parameters_callback(self, params):
         """
         DO NOT MODIFY THIS CALLBACK FUNCTION!
-        
-        This is used by the test cases to modify the parameters during testing. 
+
+        This is used by the test cases to modify the parameters during testing.
         It's called whenever a parameter is set via 'ros2 param set'.
         """
         for param in params:
@@ -232,4 +294,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
