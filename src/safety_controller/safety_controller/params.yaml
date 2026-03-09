@@ -4,6 +4,6 @@ safety_controller:
     incoming_cmd_topic: "/vesc/high_level/ackermann_cmd"
     safety_output_topic: "/vesc/low_level/input/safety"
 
-    stop_distance: 0.5
+    stop_distance: 0.8
     half_cone: 1.047
     a_max: 4.0
