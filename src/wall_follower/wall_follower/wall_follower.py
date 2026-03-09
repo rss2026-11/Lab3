@@ -15,7 +15,7 @@ class WallFollower(Node):
     def __init__(self):
         super().__init__("wall_follower")
         # Declare parameters to make them available for use
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("drive_topic", "/vesc/input/navigation")
         self.declare_parameter("side", -1)
@@ -29,12 +29,12 @@ class WallFollower(Node):
         self.SIDE = self.get_parameter('side').get_parameter_value().integer_value
         self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value
         self.DESIRED_DISTANCE = self.get_parameter('desired_distance').get_parameter_value().double_value
-		
+
         # This activates the parameters_callback function so that the tests are able
         # to change the parameters during testing.
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.add_on_set_parameters_callback(self.parameters_callback)
-  
+
         # TODO: Initialize your publishers and subscribers here
         self.publisher_ = self.create_publisher(AckermannDriveStamped, self.DRIVE_TOPIC, 10)
 
@@ -72,7 +72,7 @@ class WallFollower(Node):
             min_front_index = np.argmin(np.abs(angles - min_front_angle))
             max_front_angle = np.pi/50
             max_front_index = np.argmin(np.abs(angles - max_front_angle))
-        else: 
+        else:
             min_front_angle = -np.pi/50
             min_front_index = np.argmin(np.abs(angles - min_front_angle))
             max_front_angle = np.pi/50
@@ -132,7 +132,7 @@ class WallFollower(Node):
         x_values = side_ranges * np.cos(side_angles)
         y_values = side_ranges * np.sin(side_angles)
         return x_values, y_values
-    
+
     def distance_calc(self, x_values, y_values, front=False):
         coefficients = np.polyfit(x_values, y_values, 1)
 
@@ -151,9 +151,9 @@ class WallFollower(Node):
             else:
                 self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
                 # self.distance = raw_distance
-        
 
-    # TODO: Write your callback functions here   
+
+    # TODO: Write your callback functions here
     def listener_callback(self, msg):
         ranges = np.array(msg.ranges)
         angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
@@ -204,12 +204,12 @@ class WallFollower(Node):
 
         drive_msg.drive.speed = speed
         self.publisher_.publish(drive_msg)
-    
+
     def parameters_callback(self, params):
         """
         DO NOT MODIFY THIS CALLBACK FUNCTION!
-        
-        This is used by the test cases to modify the parameters during testing. 
+
+        This is used by the test cases to modify the parameters during testing.
         It's called whenever a parameter is set via 'ros2 param set'.
         """
         for param in params:
@@ -235,4 +235,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
