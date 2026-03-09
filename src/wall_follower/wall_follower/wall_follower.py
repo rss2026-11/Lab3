@@ -18,9 +18,9 @@ class WallFollower(Node):
         # DO NOT MODIFY THIS! 
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("drive_topic", "/vesc/input/navigation")
-        self.declare_parameter("side", 1)
+        self.declare_parameter("side", -1)
         self.declare_parameter("velocity", 1.0)
-        self.declare_parameter("desired_distance", 1.0)
+        self.declare_parameter("desired_distance", 0.75)
 
         # Fetch constants from the ROS parameter server
         # DO NOT MODIFY THIS! This is necessary for the tests to be able to test varying parameters!
@@ -183,7 +183,7 @@ class WallFollower(Node):
         # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
-        if self.front_distance <= (1.3):
+        if self.front_distance <= (1.1):
             # self.get_logger().info("Front")
             steer_angle = 4.0 * -(self.SIDE)
             speed = min(1.8, self.VELOCITY * 0.8)
