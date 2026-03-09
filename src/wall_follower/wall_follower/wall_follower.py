@@ -15,12 +15,12 @@ class WallFollower(Node):
     def __init__(self):
         super().__init__("wall_follower")
         # Declare parameters to make them available for use
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("drive_topic", "/vesc/input/navigation")
-        self.declare_parameter("side", 1)
+        self.declare_parameter("side", -1)
         self.declare_parameter("velocity", 1.0)
-        self.declare_parameter("desired_distance", 1.0)
+        self.declare_parameter("desired_distance", 0.75)
 
         # Fetch constants from the ROS parameter server
         # DO NOT MODIFY THIS! This is necessary for the tests to be able to test varying parameters!
@@ -29,12 +29,12 @@ class WallFollower(Node):
         self.SIDE = self.get_parameter('side').get_parameter_value().integer_value
         self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value
         self.DESIRED_DISTANCE = self.get_parameter('desired_distance').get_parameter_value().double_value
-		
+
         # This activates the parameters_callback function so that the tests are able
         # to change the parameters during testing.
-        # DO NOT MODIFY THIS! 
+        # DO NOT MODIFY THIS!
         self.add_on_set_parameters_callback(self.parameters_callback)
-  
+
         # TODO: Initialize your publishers and subscribers here
         self.publisher_ = self.create_publisher(AckermannDriveStamped, self.DRIVE_TOPIC, 10)
 
@@ -53,6 +53,7 @@ class WallFollower(Node):
 
         self.publish_rate = 0.05
         self.timer = self.create_timer(self.publish_rate, self.pd_controller_callback)
+        # change from timer base to listener_callback based
         self.i = 0
 
         self.front_distance = 0.0
@@ -71,7 +72,7 @@ class WallFollower(Node):
             min_front_index = np.argmin(np.abs(angles - min_front_angle))
             max_front_angle = np.pi/50
             max_front_index = np.argmin(np.abs(angles - max_front_angle))
-        else: 
+        else:
             min_front_angle = -np.pi/50
             min_front_index = np.argmin(np.abs(angles - min_front_angle))
             max_front_angle = np.pi/50
@@ -92,6 +93,7 @@ class WallFollower(Node):
         filt_front_ranges = []
         for i in range(len(front_ranges)):
             if front_ranges[i] > 0.12 and front_ranges[i] < 15.0:
+                # np percentile
                 filt_front_ranges.append(front_ranges[i])
                 filt_front_angles.append(front_angles[i])
 
@@ -99,8 +101,8 @@ class WallFollower(Node):
             front_x_values = filt_front_ranges * np.cos(filt_front_angles)
             front_y_values = filt_front_ranges * np.sin(filt_front_angles)
         else:
-            front_x_values = [1]
-            front_y_values = [1]
+            front_x_values = [0.0]
+            front_y_values = [1.5]
 
         return front_x_values, front_y_values
 
@@ -130,36 +132,34 @@ class WallFollower(Node):
         x_values = side_ranges * np.cos(side_angles)
         y_values = side_ranges * np.sin(side_angles)
         return x_values, y_values
-    
+
     def distance_calc(self, x_values, y_values, front=False):
         coefficients = np.polyfit(x_values, y_values, 1)
 
         raw_distance = np.abs(coefficients[1]) / np.sqrt(coefficients[0]**2 + 1)
-        
 
         if front:
             self.get_logger().info(f'FD found: {raw_distance}')
             if self.front_distance == 0.0:
                 self.front_distance = raw_distance # Initialize on first run
             else:
-                # self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
-                self.front_distance = raw_distance
+                self.front_distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.front_distance)
+                # self.front_distance = raw_distance
         else:
             if self.distance == 0.0:
                 self.distance = raw_distance
             else:
-                # self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
-                self.distance = raw_distance
-        
+                self.distance = (self.alpha * raw_distance) + ((1.0 - self.alpha) * self.distance)
+                # self.distance = raw_distance
 
-    # TODO: Write your callback functions here   
+
+    # TODO: Write your callback functions here
     def listener_callback(self, msg):
         ranges = np.array(msg.ranges)
         angles = np.arange(msg.angle_min, msg.angle_max, msg.angle_increment)
 
         # Front calculation
         front_x_values, front_y_values = self.front_scan(ranges, angles)
-        # VisualizationTools.plot_line(x_values, y_values, self.line_vis)
 
         self.distance_calc(front_x_values, front_y_values, True)
         VisualizationTools.plot_line(front_x_values, front_y_values, self.front_line_vis)
@@ -171,23 +171,24 @@ class WallFollower(Node):
         self.distance_calc(x_values, y_values)
 
     def pd_controller_callback(self):
-
         error = self.DESIRED_DISTANCE - self.distance
+        # buffer error signal
         self.get_logger().info('Distance found: "%s"' % self.distance)
-        self.get_logger().info('FD found: "%s"' % self.front_distance)
+        # self.get_logger().info('FD found: "%s"' % self.front_distance)
         now = self.get_clock().now()
         dt = (now.nanoseconds - self.prev_time) / 1e9
         d_error = (error - self.prev_error)/dt
         d_error = np.clip(d_error, -2.5, 2.5)
+        # try without div by dt
         self.error_sum = self.error_sum+error
         self.error_sum = np.clip(self.error_sum, -10.0, 10.0)
         control_signal = error * self.kp + self.kd*(d_error)
         # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
-        if self.front_distance <= (1.3):
+        if self.front_distance <= (1.1):
             # self.get_logger().info("Front")
-            steer_angle = 2.0 * -(self.SIDE)
+            steer_angle = 4.0 * -(self.SIDE)
             speed = min(1.8, self.VELOCITY * 0.8)
         else:
             # self.get_logger().info("Normal steering")
@@ -203,12 +204,12 @@ class WallFollower(Node):
 
         drive_msg.drive.speed = speed
         self.publisher_.publish(drive_msg)
-    
+
     def parameters_callback(self, params):
         """
         DO NOT MODIFY THIS CALLBACK FUNCTION!
-        
-        This is used by the test cases to modify the parameters during testing. 
+
+        This is used by the test cases to modify the parameters during testing.
         It's called whenever a parameter is set via 'ros2 param set'.
         """
         for param in params:
@@ -234,4 +235,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
