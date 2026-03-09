@@ -1,1 +1,0 @@
-/root/racecar_ws/src/Lab3/src/wall_follower/launch/launch_test_sim.launch.py
