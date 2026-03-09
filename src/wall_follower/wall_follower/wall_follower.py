@@ -184,9 +184,9 @@ class WallFollower(Node):
         # control_signal = error * self.kp + self.kd*(d_error) + self.ki*(self.error_sum)
         self.prev_error = error
         self.prev_time = now.nanoseconds
-        if self.front_distance <= (1.1):
+        if self.front_distance <= (1.3):
             # self.get_logger().info("Front")
-            steer_angle = 2.0 * -(self.SIDE)
+            steer_angle = 4.0 * -(self.SIDE)
             speed = min(1.8, self.VELOCITY * 0.8)
         else:
             # self.get_logger().info("Normal steering")
