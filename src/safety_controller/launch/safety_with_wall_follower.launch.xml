@@ -1,0 +1,10 @@
+<launch>
+  <node pkg="wall_follower" name="wall_follower" exec="wall_follower" output="screen">
+    <param from="$(find-pkg-share wall_follower)/params.yaml"/>
+    <param name="drive_topic" value="/vesc/high_level/input/nav_0"/>
+  </node>
+
+  <node pkg="safety_controller" name="safety_controller" exec="safety_controller" output="screen">
+    <param from="$(find-pkg-share safety_controller)/params.yaml"/>
+  </node>
+</launch>
