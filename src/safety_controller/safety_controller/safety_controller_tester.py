@@ -17,7 +17,7 @@ class SafetyControllerTester(Node):
 
     def publish_drive(self):
         msg = AckermannDriveStamped()
-        msg.drive.speed = 3.0
+        msg.drive.speed = 1.0
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
