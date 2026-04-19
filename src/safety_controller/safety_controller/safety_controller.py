@@ -4,7 +4,6 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
-from nav_msgs.msg import Odometry
 
 
 class SafetyController(Node):
@@ -14,14 +13,14 @@ class SafetyController(Node):
 
         # 1. Parameters
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("odom_topic", "/vesc/odom")
+        self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/nav_0")
         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
         self.declare_parameter("stop_distance", 0.2)
         self.declare_parameter("half_cone", math.pi / 3)
         self.declare_parameter("a_max", 4.0)
 
         scan_topic          = self.get_parameter("scan_topic").value
-        odom_topic          = self.get_parameter("odom_topic").value
+        incoming_cmd_topic  = self.get_parameter("incoming_cmd_topic").value
         safety_output_topic = self.get_parameter("safety_output_topic").value
         self.stop_distance  = self.get_parameter("stop_distance").value
         self.half_cone      = self.get_parameter("half_cone").value
@@ -29,7 +28,7 @@ class SafetyController(Node):
 
         # 2. Subscribers
         self.create_subscription(LaserScan, scan_topic, self.scan_callback, 10)
-        self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
+        self.create_subscription(AckermannDriveStamped, incoming_cmd_topic, self.drive_callback, 10)
 
         # 3. Publisher
         self.pub = self.create_publisher(AckermannDriveStamped, safety_output_topic, 10)
@@ -39,9 +38,9 @@ class SafetyController(Node):
         self.current_steering = 0.0
 
 
-    def odom_callback(self, msg):
-        self.current_speed    = msg.twist.twist.linear.x
-        # We don't actively need steering angle for the basic distance checks
+    def drive_callback(self, msg):
+        self.current_speed    = msg.drive.speed
+        self.current_steering = msg.drive.steering_angle
 
 
     def scan_callback(self, msg):
@@ -73,20 +72,23 @@ class SafetyController(Node):
         if closest < self.stop_distance:
             self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m / {closest_angle_deg:.1f}deg — publishing STOP")
             stop_msg = AckermannDriveStamped()
-            stop_msg.drive.speed = 0.0
+            stop_msg.drive.speed =  -0.1 # 0.0
             stop_msg.drive.steering_angle = 0.0
             self.pub.publish(stop_msg)
             return
 
-        # Step 7 — Layer 2: gradual braking
-        # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)
+        # Step 7 — Layer 2: gradual braking  # oldest line
+        # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)  # oldest line
         
+        # Linear break function adatpting to speed
         m = (2.5) / 3.0
         b = 0.5 - (m * 0.5) 
         brake_distance = (self.current_speed - b) / m
 
-        if closest - self.stop_distance < brake_distance:
-            safe_speed = self.current_speed * (closest - self.stop_distance) / brake_distance
+        # if closest - self.stop_distance < brake_distance: # old line
+        if closest < brake_distance:
+            # safe_speed = self.current_speed * (closest - self.stop_distance) / brake_distance  # old line
+            safe_speed = self.current_speed * (closest) / brake_distance
             self.get_logger().warn(f"[BRAKING] {closest:.3f}m ahead — speed {self.current_speed:.3f} -> {safe_speed:.3f} m/s")
             brake_msg = AckermannDriveStamped()
             brake_msg.drive.speed = safe_speed
