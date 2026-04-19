@@ -83,7 +83,7 @@ class SafetyController(Node):
         # Linear break function adatpting to speed
         m = (2.5) / 3.0
         b = 0.5 - (m * 0.5) 
-        brake_distace = (self.speed - b) / m
+        brake_distance = (self.current_speed - b) / m
 
         # if closest - self.stop_distance < brake_distance: # old line
         if closest < brake_distance:
