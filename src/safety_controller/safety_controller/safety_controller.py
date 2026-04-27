@@ -13,10 +13,11 @@ class SafetyController(Node):
 
         # 1. Parameters
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/nav_0")
+        self.declare_parameter("incoming_cmd_topic", "/vesc/input/navigation")
         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
         self.declare_parameter("stop_distance", 0.2)
-        self.declare_parameter("half_cone", math.pi / 3)
+        # Reduced from math.pi / 3 to avoid seeing walls when following racelines
+        self.declare_parameter("half_cone", 0.35) 
         self.declare_parameter("a_max", 4.0)
 
         scan_topic          = self.get_parameter("scan_topic").value
@@ -58,15 +59,28 @@ class SafetyController(Node):
         ranges[bad] = np.inf
 
         # Step 4 — filter to forward cone only
-        in_cone = (angles > -self.half_cone) & (angles < self.half_cone)
+        # Shift the cone slightly toward wherever we're steering.
+        cone_center = self.current_steering * 0.5
+        in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
 
+        # Filter out points that are far to the side (lateral distance > 0.35m)
+        # This prevents braking for walls when driving parallel to them.
+        if len(cone_ranges) > 0:
+            lateral_distances = np.abs(cone_ranges * np.sin(cone_angles))
+            in_path = lateral_distances < 0.35
+            cone_ranges = cone_ranges[in_path]
+            cone_angles = cone_angles[in_path]
+
         # Step 5 — find closest obstacle in cone
-        closest = np.min(cone_ranges)
+        if len(cone_ranges) == 0:
+            return
+
+        closest = float(np.min(cone_ranges))
         closest_angle_deg = math.degrees(cone_angles[np.argmin(cone_ranges)])
 
-        self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
+        # self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
 
         # Step 6 — Layer 1: hard stop
         if closest < self.stop_distance:
@@ -79,10 +93,10 @@ class SafetyController(Node):
 
         # Step 7 — Layer 2: gradual braking  # oldest line
         # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)  # oldest line
-        
+
         # Linear break function adatpting to speed
         m = (2.5) / 3.0
-        b = 0.5 - (m * 0.5) 
+        b = 0.5 - (m * 0.5)
         brake_distance = (self.current_speed - b) / m
 
         # if closest - self.stop_distance < brake_distance: # old line
