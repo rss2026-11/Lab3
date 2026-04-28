@@ -3,6 +3,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
+import time
 from ackermann_msgs.msg import AckermannDriveStamped
 
 
@@ -38,16 +39,48 @@ class SafetyController(Node):
         self.current_speed    = 0.0
         self.current_steering = 0.0
 
+        # NEW: Stuck + reverse logic
+        self.is_stopped_due_to_obstacle = False
+        self.stopped_time_start = None
+        self.reverse_active = False
+        self.reverse_end_time = None
+
 
     def drive_callback(self, msg):
         self.current_speed    = msg.drive.speed
         self.current_steering = msg.drive.steering_angle
 
 
+    # NEW helper: publish reverse command
+    def publish_reverse(self):
+        msg = AckermannDriveStamped()
+        msg.drive.speed = -0.3
+        msg.drive.steering_angle = 0.0
+        self.pub.publish(msg)
+
+
     def scan_callback(self, msg):
+
+        now = time.time()
+
+        # NEW: If reverse maneuver is active, override everything
+        if self.reverse_active:
+            if now < self.reverse_end_time:
+                self.publish_reverse()
+                return
+            else:
+                self.reverse_active = False
+                self.get_logger().info("[REVERSE COMPLETE] Resuming normal safety control")
+                return
 
         # Step 1 — if not moving, nothing to do
         if abs(self.current_speed) < 0.05:
+            # NEW: If car is not moving but was previously stopped due to obstacle, check timer
+            if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
+                if now - self.stopped_time_start > 10.0:
+                    self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+                    self.reverse_active = True
+                    self.reverse_end_time = now + 1.0
             return
 
         # Step 2 — extract ranges and angles
@@ -75,29 +108,42 @@ class SafetyController(Node):
 
         # Step 5 — find closest obstacle in cone
         if len(cone_ranges) == 0:
+            # NEW: If obstacle disappeared, reset stuck state
+            self.is_stopped_due_to_obstacle = False
+            self.stopped_time_start = None
             return
 
         closest = float(np.min(cone_ranges))
         closest_angle_deg = math.degrees(cone_angles[np.argmin(cone_ranges)])
 
-        # self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
-
         # Step 6 — Layer 1: hard stop
         if closest < self.stop_distance:
             self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m / {closest_angle_deg:.1f}deg — publishing STOP")
             stop_msg = AckermannDriveStamped()
-            stop_msg.drive.speed =  -0.1 # 0.0
+            stop_msg.drive.speed = 0.0
             stop_msg.drive.steering_angle = 0.0
             self.pub.publish(stop_msg)
+
+            # NEW: Start stuck timer
+            if not self.is_stopped_due_to_obstacle:
+                self.is_stopped_due_to_obstacle = True
+                self.stopped_time_start = now
+
+            # NEW: Check if stuck for 10 seconds
+            if now - self.stopped_time_start > 10.0:
+                self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+                self.reverse_active = True
+                self.reverse_end_time = now + 1.0
+
             return
 
         # Step 7 — Layer 2: gradual braking  # oldest line
         # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)  # oldest line
 
         # Linear break function adatpting to speed
-        m = (2.5) / 3.0
-        b = 0.5 - (m * 0.5)
-        brake_distance = (self.current_speed - b) / m
+        m = 0.1
+        b = 0.35
+        brake_distance = self.current_speed * m + b
 
         # if closest - self.stop_distance < brake_distance: # old line
         if closest < brake_distance:
@@ -108,6 +154,23 @@ class SafetyController(Node):
             brake_msg.drive.speed = safe_speed
             brake_msg.drive.steering_angle = 0.0
             self.pub.publish(brake_msg)
+
+            # NEW: If braking brings car to near stop, start stuck timer
+            if safe_speed < 0.05:
+                if not self.is_stopped_due_to_obstacle:
+                    self.is_stopped_due_to_obstacle = True
+                    self.stopped_time_start = now
+
+                if now - self.stopped_time_start > 10.0:
+                    self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+                    self.reverse_active = True
+                    self.reverse_end_time = now + 1.0
+
+            return
+
+        # NEW: If obstacle is gone, reset stuck state
+        self.is_stopped_due_to_obstacle = False
+        self.stopped_time_start = None
 
 
 def main():
@@ -123,9 +186,7 @@ if __name__ == "__main__":
 
 
 
-
-
-# #!/usr/bin/env python3
+# import math
 # import numpy as np
 # import rclpy
 # from rclpy.node import Node
@@ -138,139 +199,103 @@ if __name__ == "__main__":
 #     def __init__(self):
 #         super().__init__("safety_controller")
 
-#         # Topics (parameterized so we can swap between sim and real car)
+#         # 1. Parameters
 #         self.declare_parameter("scan_topic", "/scan")
-#         self.declare_parameter("drive_input_topic", "/drive_input")
-#         self.declare_parameter("drive_output_topic", "/drive")
+#         self.declare_parameter("incoming_cmd_topic", "/vesc/input/navigation")
+#         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
+#         self.declare_parameter("stop_distance", 0.2)
+#         # Reduced from math.pi / 3 to avoid seeing walls when following racelines
+#         self.declare_parameter("half_cone", 0.35) 
+#         self.declare_parameter("a_max", 4.0)
 
-#         # Safety tuning knobs
-#         self.declare_parameter("safety_angle", 0.35)       # half-width of forward cone (rad)
-#         self.declare_parameter("hard_stop_distance", 0.3)   # absolute min range before stop (m)
-#         self.declare_parameter("ttc_threshold", 0.8)        # time-to-collision cutoff (s)
+#         scan_topic          = self.get_parameter("scan_topic").value
+#         incoming_cmd_topic  = self.get_parameter("incoming_cmd_topic").value
+#         safety_output_topic = self.get_parameter("safety_output_topic").value
+#         self.stop_distance  = self.get_parameter("stop_distance").value
+#         self.half_cone      = self.get_parameter("half_cone").value
+#         self.a_max          = self.get_parameter("a_max").value
 
-#         scan_topic = self.get_parameter("scan_topic").get_parameter_value().string_value
-#         drive_in = self.get_parameter("drive_input_topic").get_parameter_value().string_value
-#         drive_out = self.get_parameter("drive_output_topic").get_parameter_value().string_value
-#         self.safety_angle = self.get_parameter("safety_angle").get_parameter_value().double_value
-#         self.hard_stop_dist = self.get_parameter("hard_stop_distance").get_parameter_value().double_value
-#         self.ttc_threshold = self.get_parameter("ttc_threshold").get_parameter_value().double_value
-
-#         # Subscribe to lidar and incoming drive commands, publish safe commands out
+#         # 2. Subscribers
 #         self.create_subscription(LaserScan, scan_topic, self.scan_callback, 10)
-#         self.create_subscription(AckermannDriveStamped, drive_in, self.drive_callback, 10)
-#         self.drive_pub = self.create_publisher(AckermannDriveStamped, drive_out, 10)
+#         self.create_subscription(AckermannDriveStamped, incoming_cmd_topic, self.drive_callback, 10)
 
-#         # Keep track of what the nav node wants to do
-#         self.last_speed = 0.0
-#         self.last_steering = 0.0
-#         self.last_cmd = AckermannDriveStamped()
-#         self.safe = True
-#         self.log_counter = 0
+#         # 3. Publisher
+#         self.pub = self.create_publisher(AckermannDriveStamped, safety_output_topic, 10)
 
-#         self.get_logger().info(
-#             f"Safety controller running: {drive_in} -> {drive_out}, "
-#             f"cone={np.degrees(self.safety_angle):.0f}deg, "
-#             f"stop={self.hard_stop_dist}m, ttc={self.ttc_threshold}s")
+#         # 4. State
+#         self.current_speed    = 0.0
+#         self.current_steering = 0.0
+
 
 #     def drive_callback(self, msg):
-#         """Nav command comes in -- forward it only if we think the path is clear."""
-#         self.last_cmd = msg
-#         self.last_speed = msg.drive.speed
-#         self.last_steering = msg.drive.steering_angle
+#         self.current_speed    = msg.drive.speed
+#         self.current_steering = msg.drive.steering_angle
 
-#         if self.safe:
-#             self.drive_pub.publish(msg)
-
-#     def compute_ttc(self, ranges, angles, speed):
-#         """
-#         TTC = range / (speed * cos(angle))
-
-#         cos(angle) projects the range onto the car's forward axis.
-#         Beams pointing sideways (cos ~ 0) get infinite TTC since
-#         we're not moving toward them.
-#         """
-#         cos_angles = np.cos(angles)
-#         forward_enough = cos_angles > 0.01
-#         ttc = np.where(forward_enough, ranges / (speed * cos_angles), np.inf)
-#         return ttc
 
 #     def scan_callback(self, msg):
-#         ranges = np.array(msg.ranges, dtype=np.float64)
+
+#         # Step 1 — if not moving, nothing to do
+#         if abs(self.current_speed) < 0.05:
+#             return
+
+#         # Step 2 — extract ranges and angles
+#         ranges = np.array(msg.ranges)
 #         angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
 
-#         # Throw out garbage readings (NaN, zero, or basically touching the sensor)
+#         # Step 3 — clean bad readings
 #         bad = ~np.isfinite(ranges) | (ranges < 0.05)
 #         ranges[bad] = np.inf
 
-#         speed = self.last_speed
-#         steering = self.last_steering
-#         danger = False
-
-#         # === FORWARD CHECK ===
-#         # Only look at beams in a narrow cone ahead of the car.
+#         # Step 4 — filter to forward cone only
 #         # Shift the cone slightly toward wherever we're steering.
-#         cone_center = steering * 0.5
-#         in_cone = ((angles > cone_center - self.safety_angle) &
-#                    (angles < cone_center + self.safety_angle))
-
+#         cone_center = self.current_steering * 0.5
+#         in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
 #         cone_ranges = ranges[in_cone]
 #         cone_angles = angles[in_cone]
 
+#         # Filter out points that are far to the side (lateral distance > 0.35m)
+#         # This prevents braking for walls when driving parallel to them.
 #         if len(cone_ranges) > 0:
-#             closest = float(np.min(cone_ranges))
-#         else:
-#             closest = float("inf")
+#             lateral_distances = np.abs(cone_ranges * np.sin(cone_angles))
+#             in_path = lateral_distances < 0.35
+#             cone_ranges = cone_ranges[in_path]
+#             cone_angles = cone_angles[in_path]
 
-#         # Only worry about forward obstacles if we're actually moving forward
-#         if speed > 0.01 and closest < float("inf"):
-#             # Layer 1: something RIGHT in front of us -- just stop
-#             if closest < self.hard_stop_dist:
-#                 danger = True
+#         # Step 5 — find closest obstacle in cone
+#         if len(cone_ranges) == 0:
+#             return
 
-#             # Layer 2: check time to collision
-#             if not danger:
-#                 ttc = self.compute_ttc(cone_ranges, cone_angles, speed)
-#                 min_ttc = float(np.min(ttc))
-#                 if min_ttc < self.ttc_threshold:
-#                     danger = True
+#         closest = float(np.min(cone_ranges))
+#         closest_angle_deg = math.degrees(cone_angles[np.argmin(cone_ranges)])
 
-#         # The lidar doesn't see directly behind, but it covers ~270 degrees
-#         # so we can check the beams past +/-90 degrees for rearward obstacles
-#         if not danger and speed < -0.01:
-#             behind = np.abs(angles) > (np.pi / 2 + self.safety_angle)
-#             rear_ranges = ranges[behind]
-#             rear_angles = angles[behind]
+#         # self.get_logger().info(f"Closest obstacle: {closest:.3f}m at {closest_angle_deg:.1f}deg")
 
-#             if len(rear_ranges) > 0:
-#                 rear_closest = float(np.min(rear_ranges))
-
-#                 if rear_closest < self.hard_stop_dist:
-#                     danger = True
-#                 else:
-#                     # For rear beams cos is negative, so flip sign
-#                     rear_cos = -np.cos(rear_angles)
-#                     rear_forward = rear_cos > 0.01
-#                     rear_ttc = np.where(rear_forward,
-#                                         rear_ranges / (abs(speed) * rear_cos),
-#                                         np.inf)
-#                     if float(np.min(rear_ttc)) < self.ttc_threshold:
-#                         danger = True
-
-#         # === PUBLISH ===
-#         self.safe = not danger
-
-#         if danger:
+#         # Step 6 — Layer 1: hard stop
+#         if closest < self.stop_distance:
+#             self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m / {closest_angle_deg:.1f}deg — publishing STOP")
 #             stop_msg = AckermannDriveStamped()
-#             stop_msg.drive.speed = 0.0
+#             stop_msg.drive.speed =  -0.1 # 0.0
 #             stop_msg.drive.steering_angle = 0.0
-#             self.drive_pub.publish(stop_msg)
+#             self.pub.publish(stop_msg)
+#             return
 
-#         # Print status roughly once per second so we can debug
-#         self.log_counter += 1
-#         if self.log_counter % 50 == 0:
-#             tag = "STOP" if danger else "OK"
-#             self.get_logger().info(
-#                 f"[{tag}] speed={speed:.2f} closest={closest:.2f}m")
+#         # Step 7 — Layer 2: gradual braking  # oldest line
+#         # brake_distance = (self.current_speed ** 2) / (2 * self.a_max)  # oldest line
+
+#         # Linear break function adatpting to speed
+#         m = 0.1
+#         b = 0.35
+#         brake_distance = self.current_speed * m + b
+
+#         # if closest - self.stop_distance < brake_distance: # old line
+#         if closest < brake_distance:
+#             # safe_speed = self.current_speed * (closest - self.stop_distance) / brake_distance  # old line
+#             safe_speed = self.current_speed * (closest) / brake_distance
+#             self.get_logger().warn(f"[BRAKING] {closest:.3f}m ahead — speed {self.current_speed:.3f} -> {safe_speed:.3f} m/s")
+#             brake_msg = AckermannDriveStamped()
+#             brake_msg.drive.speed = safe_speed
+#             brake_msg.drive.steering_angle = 0.0
+#             self.pub.publish(brake_msg)
 
 
 # def main():
@@ -283,3 +308,8 @@ if __name__ == "__main__":
 
 # if __name__ == "__main__":
 #     main()
+
+
+
+
+
