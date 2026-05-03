@@ -83,6 +83,10 @@ class SafetyController(Node):
                     self.reverse_end_time = now + 1.0
             return
 
+        # Ignore forward safety checks if the car is explicitly commanded to reverse
+        if self.current_speed < -0.05:
+            return
+
         # Step 2 — extract ranges and angles
         ranges = np.array(msg.ranges)
         angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
@@ -205,7 +209,7 @@ if __name__ == "__main__":
 #         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
 #         self.declare_parameter("stop_distance", 0.2)
 #         # Reduced from math.pi / 3 to avoid seeing walls when following racelines
-#         self.declare_parameter("half_cone", 0.35) 
+#         self.declare_parameter("half_cone", 0.35)
 #         self.declare_parameter("a_max", 4.0)
 
 #         scan_topic          = self.get_parameter("scan_topic").value
@@ -308,8 +312,3 @@ if __name__ == "__main__":
 
 # if __name__ == "__main__":
 #     main()
-
-
-
-
-
