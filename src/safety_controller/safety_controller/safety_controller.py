@@ -14,7 +14,7 @@ class SafetyController(Node):
 
         # 1. Parameters
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("incoming_cmd_topic", "/vesc/low_level/input/navigation")
+        self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/navigation")
         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
         self.declare_parameter("stop_distance", 0.2)
         # Reduced from math.pi / 3 to avoid seeing walls when following racelines
