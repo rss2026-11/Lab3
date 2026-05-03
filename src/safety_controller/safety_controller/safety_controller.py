@@ -16,9 +16,9 @@ class SafetyController(Node):
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/navigation")
         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
-        self.declare_parameter("stop_distance", 0.2)
+        self.declare_parameter("stop_distance", 0.4)
         # Reduced from math.pi / 3 to avoid seeing walls when following racelines
-        self.declare_parameter("half_cone", 0.35)
+        self.declare_parameter("half_cone", 0.42)
         self.declare_parameter("a_max", 4.0)
 
         scan_topic          = self.get_parameter("scan_topic").value
@@ -98,11 +98,11 @@ class SafetyController(Node):
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
 
-        # Filter out points that are far to the side (lateral distance > 0.35m)
+        # Filter out points that are far to the side (lateral distance > 0.4m)
         # This prevents braking for walls when driving parallel to them.
         if len(cone_ranges) > 0:
             lateral_distances = np.abs(cone_ranges * np.sin(cone_angles))
-            in_path = lateral_distances < 0.35
+            in_path = lateral_distances < 0.4
             cone_ranges = cone_ranges[in_path]
             cone_angles = cone_angles[in_path]
 
