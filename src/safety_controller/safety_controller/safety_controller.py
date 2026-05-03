@@ -54,7 +54,7 @@ class SafetyController(Node):
     # NEW helper: publish reverse command
     def publish_reverse(self):
         msg = AckermannDriveStamped()
-        msg.drive.speed = -0.3
+        msg.drive.speed = -0.5
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
@@ -77,14 +77,10 @@ class SafetyController(Node):
         if abs(self.current_speed) < 0.05:
             # NEW: If car is not moving but was previously stopped due to obstacle, check timer
             if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-                if now - self.stopped_time_start > 10.0:
-                    self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+                if now - self.stopped_time_start > 5.0:
+                    self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
                     self.reverse_active = True
                     self.reverse_end_time = now + 1.0
-            return
-
-        # Ignore forward safety checks if the car is explicitly commanded to reverse
-        if self.current_speed < -0.05:
             return
 
         # Step 2 — extract ranges and angles
@@ -133,9 +129,9 @@ class SafetyController(Node):
                 self.is_stopped_due_to_obstacle = True
                 self.stopped_time_start = now
 
-            # NEW: Check if stuck for 10 seconds
-            if now - self.stopped_time_start > 10.0:
-                self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+            # NEW: Check if stuck for 5 seconds
+            if now - self.stopped_time_start > 5.0:
+                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
                 self.reverse_active = True
                 self.reverse_end_time = now + 1.0
 
@@ -165,8 +161,8 @@ class SafetyController(Node):
                     self.is_stopped_due_to_obstacle = True
                     self.stopped_time_start = now
 
-                if now - self.stopped_time_start > 10.0:
-                    self.get_logger().warn("[STUCK] 10 seconds passed — initiating REVERSE MANEUVER")
+                if now - self.stopped_time_start > 5.0:
+                    self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
                     self.reverse_active = True
                     self.reverse_end_time = now + 1.0
 
