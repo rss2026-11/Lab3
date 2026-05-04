@@ -54,7 +54,7 @@ class SafetyController(Node):
     # NEW helper: publish reverse command
     def publish_reverse(self):
         msg = AckermannDriveStamped()
-        msg.drive.speed = -0.5
+        msg.drive.speed = -0.2
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
@@ -75,8 +75,8 @@ class SafetyController(Node):
 
         # NEW: Check if car is stuck (we do this regardless of commanded speed now)
         if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-            if now - self.stopped_time_start > 5.0:
-                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
+            if now - self.stopped_time_start > 3.0:
+                self.get_logger().warn("[STUCK] 2 seconds passed — initiating REVERSE MANEUVER")
                 self.reverse_active = True
                 self.reverse_end_time = now + 1.0
 
