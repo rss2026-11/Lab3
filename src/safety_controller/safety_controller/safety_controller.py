@@ -54,7 +54,7 @@ class SafetyController(Node):
     # NEW helper: publish reverse command
     def publish_reverse(self):
         msg = AckermannDriveStamped()
-        msg.drive.speed = -1.0
+        msg.drive.speed = -0.5
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
