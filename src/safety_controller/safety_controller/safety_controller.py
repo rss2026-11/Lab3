@@ -73,15 +73,12 @@ class SafetyController(Node):
                 self.get_logger().info("[REVERSE COMPLETE] Resuming normal safety control")
                 return
 
-        # Step 1 — if not moving, nothing to do
-        if abs(self.current_speed) < 0.05:
-            # NEW: If car is not moving but was previously stopped due to obstacle, check timer
-            if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-                if now - self.stopped_time_start > 5.0:
-                    self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
-                    self.reverse_active = True
-                    self.reverse_end_time = now + 1.0
-            return
+        # NEW: Check if car is stuck (we do this regardless of commanded speed now)
+        if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
+            if now - self.stopped_time_start > 5.0:
+                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
+                self.reverse_active = True
+                self.reverse_end_time = now + 1.0
 
         # Step 2 — extract ranges and angles
         ranges = np.array(msg.ranges)
@@ -142,7 +139,7 @@ class SafetyController(Node):
 
         # Linear break function adatpting to speed
         m = 0.1
-        b = 0.35
+        b = 0.50
         brake_distance = self.current_speed * m + b
 
         # if closest - self.stop_distance < brake_distance: # old line
@@ -168,9 +165,10 @@ class SafetyController(Node):
 
             return
 
-        # NEW: If obstacle is gone, reset stuck state
-        self.is_stopped_due_to_obstacle = False
-        self.stopped_time_start = None
+        # NEW: If obstacle is gone (with hysteresis to prevent sensor jitter resets), reset stuck state
+        if closest > self.stop_distance + 0.1:
+            self.is_stopped_due_to_obstacle = False
+            self.stopped_time_start = None
 
 
 def main():
