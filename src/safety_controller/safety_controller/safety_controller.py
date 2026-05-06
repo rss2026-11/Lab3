@@ -77,8 +77,8 @@ class SafetyController(Node):
 
         # NEW: Check if car is stuck (we do this regardless of commanded speed now)
         if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-            if now - self.stopped_time_start > 3.0:
-                self.get_logger().warn("[STUCK] 2 seconds passed — initiating REVERSE MANEUVER")
+            if now - self.stopped_time_start > 5.0:
+                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
                 self.reverse_active = True
                 self.reverse_end_time = now + 1.0
 
@@ -132,12 +132,6 @@ class SafetyController(Node):
                 self.is_stopped_due_to_obstacle = True
                 self.stopped_time_start = now
 
-            # NEW: Check if stuck for 5 seconds
-            if now - self.stopped_time_start > 5.0:
-                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
-                self.reverse_active = True
-                self.reverse_end_time = now + 1.0
-
             return
 
         # Step 7 — Layer 2: gradual braking  # oldest line
@@ -163,11 +157,6 @@ class SafetyController(Node):
                 if not self.is_stopped_due_to_obstacle:
                     self.is_stopped_due_to_obstacle = True
                     self.stopped_time_start = now
-
-                if now - self.stopped_time_start > 5.0:
-                    self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
-                    self.reverse_active = True
-                    self.reverse_end_time = now + 1.0
 
             return
 
