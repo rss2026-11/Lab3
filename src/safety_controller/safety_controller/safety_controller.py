@@ -38,6 +38,10 @@ class SafetyController(Node):
         # 4. State
         self.current_speed    = 0.0
         self.current_steering = 0.0
+        self.mission_state    = "INIT"
+
+        from std_msgs.msg import String
+        self.create_subscription(String, "/part_b/state", self.state_callback, 10)
 
         # NEW: Stuck + reverse logic
         self.is_stopped_due_to_obstacle = False
@@ -45,6 +49,8 @@ class SafetyController(Node):
         self.reverse_active = False
         self.reverse_end_time = None
 
+    def state_callback(self, msg):
+        self.mission_state = msg.data
 
     def drive_callback(self, msg):
         self.current_speed    = msg.drive.speed
@@ -91,12 +97,14 @@ class SafetyController(Node):
         ranges[bad] = np.inf
 
         # Step 4 — filter to forward or rear cone based on driving direction
-        # Shift the cone slightly toward wherever we're steering.
-        if self.current_speed >= 0:
+        # If the mission is actively trying to backup, FORCE the cone to the rear!
+        if "BACKUP" in self.mission_state:
+            in_cone = (np.abs(angles) > math.pi - self.half_cone)
+        elif self.current_speed >= 0:
             cone_center = self.current_steering * 0.5
-            in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
+            in_cone = (angles > cone_center - self.half_cone) & (angles < self.half_cone + cone_center)
         else:
-            # Reversing: check the rear!
+            # Reversing manually: check the rear!
             in_cone = (np.abs(angles) > math.pi - self.half_cone)
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
