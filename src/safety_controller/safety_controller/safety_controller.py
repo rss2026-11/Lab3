@@ -54,7 +54,7 @@ class SafetyController(Node):
     # NEW helper: publish reverse command
     def publish_reverse(self):
         msg = AckermannDriveStamped()
-        msg.drive.speed = -0.2
+        msg.drive.speed = -1.0
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
@@ -70,6 +70,8 @@ class SafetyController(Node):
                 return
             else:
                 self.reverse_active = False
+                self.is_stopped_due_to_obstacle = False
+                self.stopped_time_start = None
                 self.get_logger().info("[REVERSE COMPLETE] Resuming normal safety control")
                 return
 
@@ -88,10 +90,14 @@ class SafetyController(Node):
         bad = ~np.isfinite(ranges) | (ranges < 0.05)
         ranges[bad] = np.inf
 
-        # Step 4 — filter to forward cone only
+        # Step 4 — filter to forward or rear cone based on driving direction
         # Shift the cone slightly toward wherever we're steering.
-        cone_center = self.current_steering * 0.5
-        in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
+        if self.current_speed >= 0:
+            cone_center = self.current_steering * 0.5
+            in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
+        else:
+            # Reversing: check the rear!
+            in_cone = (np.abs(angles) > math.pi - self.half_cone)
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
 
