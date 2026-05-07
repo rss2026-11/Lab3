@@ -5,6 +5,10 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 import time
 from ackermann_msgs.msg import AckermannDriveStamped
+from nav_msgs.msg import Odometry
+from std_msgs.msg import String
+
+
 
 
 class SafetyController(Node):
@@ -31,6 +35,7 @@ class SafetyController(Node):
         # 2. Subscribers
         self.create_subscription(LaserScan, scan_topic, self.scan_callback, 10)
         self.create_subscription(AckermannDriveStamped, incoming_cmd_topic, self.drive_callback, 10)
+        self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
 
         # 3. Publisher
         self.pub = self.create_publisher(AckermannDriveStamped, safety_output_topic, 10)
@@ -40,7 +45,11 @@ class SafetyController(Node):
         self.current_steering = 0.0
         self.mission_state    = "INIT"
 
-        from std_msgs.msg import String
+        # actual pose
+        self.actual_speed = 0.0
+        self.last_cmd_speed = 0.0  # from incoming commands
+
+
         self.create_subscription(String, "/part_b/state", self.state_callback, 10)
 
         # NEW: Stuck + reverse logic
@@ -55,6 +64,13 @@ class SafetyController(Node):
     def drive_callback(self, msg):
         self.current_speed    = msg.drive.speed
         self.current_steering = msg.drive.steering_angle
+        self.last_cmd_speed   = msg.drive.speed
+        self.last_cmd_msg     = msg  # we’ll use this for pass-through
+
+    def odom_callback(self, msg):
+        vx = msg.twist.twist.linear.x
+        vy = msg.twist.twist.linear.y
+        self.actual_speed = math.sqrt(vx*vx + vy*vy)
 
 
     # NEW helper: publish reverse command
@@ -81,12 +97,24 @@ class SafetyController(Node):
                 self.get_logger().info("[REVERSE COMPLETE] Resuming normal safety control")
                 return
 
-        # NEW: Check if car is stuck (we do this regardless of commanded speed now)
+        # # NEW: Check if car is stuck (we do this regardless of commanded speed now)
+        # if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
+        #     if now - self.stopped_time_start > 5.0:
+        #         self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
+        #         self.reverse_active = True
+        #         self.reverse_end_time = now + 1.0
+
+        # NEW: odometry-based stuck detection
         if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-            if now - self.stopped_time_start > 5.0:
-                self.get_logger().warn("[STUCK] 5 seconds passed — initiating REVERSE MANEUVER")
+            # car is supposed to be moving but isn't
+            commanded_moving = abs(self.last_cmd_speed) > 0.2
+            actually_stopped = self.actual_speed < 0.05
+
+            if commanded_moving and actually_stopped and (now - self.stopped_time_start > 3.0):
+                self.get_logger().warn("[STUCK] 3s commanded motion but no odom movement — initiating REVERSE MANEUVER")
                 self.reverse_active = True
                 self.reverse_end_time = now + 1.0
+
 
         # Step 2 — extract ranges and angles
         ranges = np.array(msg.ranges)
