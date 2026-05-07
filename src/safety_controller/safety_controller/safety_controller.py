@@ -19,6 +19,7 @@ class SafetyController(Node):
         self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/navigation")
         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
         self.declare_parameter("stop_distance", 0.4)
+        # Reduced from math.pi / 3 to avoid seeing walls when following racelines
         self.declare_parameter("half_cone", 0.42)
         self.declare_parameter("a_max", 4.0)
 
@@ -33,6 +34,7 @@ class SafetyController(Node):
         self.create_subscription(LaserScan, scan_topic, self.scan_callback, 10)
         self.create_subscription(AckermannDriveStamped, incoming_cmd_topic, self.drive_callback, 10)
         self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+        self.create_subscription(String, "/part_b/state", self.state_callback, 10)
 
         # 3. Publisher
         self.pub = self.create_publisher(AckermannDriveStamped, safety_output_topic, 10)
@@ -42,22 +44,19 @@ class SafetyController(Node):
         self.current_steering = 0.0
         self.mission_state    = "INIT"
 
-        self.actual_speed = 0.0
-        self.last_cmd_speed = 0.0
-        self.last_cmd_msg = None
+        # actual pose
+        self.actual_speed   = 0.0
+        self.last_cmd_speed = 0.0  # from incoming commands
+        self.last_cmd_msg   = None
 
-        self.create_subscription(String, "/part_b/state", self.state_callback, 10)
-
-        # NEW: Stuck + reverse logic
+        # Stuck + reverse logic
         self.is_stopped_due_to_obstacle = False
         self.stopped_time_start = None
         self.reverse_active = False
         self.reverse_end_time = None
 
-
     def state_callback(self, msg):
         self.mission_state = msg.data
-
 
     def drive_callback(self, msg):
         self.current_speed    = msg.drive.speed
@@ -65,48 +64,19 @@ class SafetyController(Node):
         self.last_cmd_speed   = msg.drive.speed
         self.last_cmd_msg     = msg
 
-
     def odom_callback(self, msg):
         vx = msg.twist.twist.linear.x
         vy = msg.twist.twist.linear.y
-        self.actual_speed = math.sqrt(vx*vx + vy*vy)
-
+        self.actual_speed = math.sqrt(vx * vx + vy * vy)
 
     def publish_reverse(self):
         msg = AckermannDriveStamped()
         msg.drive.speed = -1.0
-        msg.drive.steering_angle = -self.current_steering
+        msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
 
-
     def scan_callback(self, msg):
-
         now = time.time()
-
-        # NEW: If reverse maneuver is active, override everything
-        if self.reverse_active:
-            if now < self.reverse_end_time:
-                self.publish_reverse()
-                return
-            else:
-                self.reverse_active = False
-                self.is_stopped_due_to_obstacle = False
-                self.stopped_time_start = None
-                self.get_logger().info("[REVERSE COMPLETE] Resuming normal safety control")
-                return
-
-        # NEW: odometry-based stuck detection (no commanded-speed requirement)
-        if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None:
-            actually_stopped = self.actual_speed < 0.05
-            stuck_duration = now - self.stopped_time_start
-
-            if actually_stopped and stuck_duration > 5.0:
-                self.get_logger().warn(
-                    f"[STUCK] {stuck_duration:.1f}s at HARD STOP with no motion — initiating REVERSE MANEUVER"
-                )
-                self.reverse_active = True
-                self.reverse_end_time = now + 1.0
-                return
 
         # Step 2 — extract ranges and angles
         ranges = np.array(msg.ranges)
@@ -128,25 +98,59 @@ class SafetyController(Node):
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
 
-        # Filter out points that are far to the side
+        # Filter out points that are far to the side (lateral distance > 0.4m)
         if len(cone_ranges) > 0:
             lateral_distances = np.abs(cone_ranges * np.sin(cone_angles))
             in_path = lateral_distances < 0.4
             cone_ranges = cone_ranges[in_path]
             cone_angles = cone_angles[in_path]
 
-        # Step 5 — find closest obstacle in cone
+        # If no obstacle in cone
         if len(cone_ranges) == 0:
-            self.is_stopped_due_to_obstacle = False
-            self.stopped_time_start = None
-
-            # PASS THROUGH COMMAND
-            if self.last_cmd_msg is not None:
-                self.pub.publish(self.last_cmd_msg)
+            # If we were reversing and obstacle disappeared, we can stop reverse early
+            if self.reverse_active:
+                if now >= self.reverse_end_time:
+                    self.reverse_active = False
+                    self.is_stopped_due_to_obstacle = False
+                    self.stopped_time_start = None
+                    self.get_logger().info("[REVERSE COMPLETE] No obstacle in cone — resuming normal safety control")
+                else:
+                    # Still within 1s reverse window, keep backing up
+                    self.publish_reverse()
+                    return
+            else:
+                # No obstacle, reset stuck state
+                self.is_stopped_due_to_obstacle = False
+                self.stopped_time_start = None
             return
 
         closest = float(np.min(cone_ranges))
         closest_angle_deg = math.degrees(cone_angles[np.argmin(cone_ranges)])
+
+        # --- Decide if we should start a reverse maneuver (5s stopped due to obstacle) ---
+        if self.is_stopped_due_to_obstacle and self.stopped_time_start is not None and not self.reverse_active:
+            if now - self.stopped_time_start >= 5.0:
+                self.get_logger().warn("[STUCK] 5 seconds stopped due to obstacle — initiating REVERSE MANEUVER")
+                self.reverse_active = True
+                self.reverse_end_time = now + 1.0  # reverse for 1 second
+
+        # --- If reverse maneuver is active, override everything else ---
+        if self.reverse_active:
+            # Back up for up to 1s AND until closest obstacle is at least 0.8m away
+            if now < self.reverse_end_time and closest < 0.8:
+                self.get_logger().warn(
+                    f"[REVERSING] closest obstacle {closest:.3f}m / {closest_angle_deg:.1f}deg — backing up"
+                )
+                self.publish_reverse()
+                return
+            else:
+                self.reverse_active = False
+                self.is_stopped_due_to_obstacle = False
+                self.stopped_time_start = None
+                self.get_logger().info(
+                    f"[REVERSE COMPLETE] closest obstacle {closest:.3f}m — resuming normal safety control"
+                )
+                # fall through to normal safety logic with updated closest
 
         # Step 6 — Layer 1: hard stop
         if closest < self.stop_distance:
@@ -158,47 +162,40 @@ class SafetyController(Node):
             stop_msg.drive.steering_angle = 0.0
             self.pub.publish(stop_msg)
 
+            # Start or keep stuck timer (for later reverse)
             if not self.is_stopped_due_to_obstacle:
                 self.is_stopped_due_to_obstacle = True
                 self.stopped_time_start = now
 
             return
 
-        # Step 7 — Layer 2: gradual braking (physics-based)
-        brake_distance_phys = (self.current_speed ** 2) / (2.0 * self.a_max) if self.a_max > 0 else 0.0
-        buffer = 0.3
-        brake_distance = max(0.5, brake_distance_phys + buffer)
+        # Step 7 — Layer 2: gradual braking
+        m = 0.1
+        b = 0.50
+        brake_distance = self.current_speed * m + b
 
         if closest < brake_distance:
-            ratio = max(0.0, closest / brake_distance)
-            safe_speed = self.current_speed * ratio
-
-            if safe_speed < 0.05:
-                safe_speed = 0.0
-
+            safe_speed = self.current_speed * (closest) / brake_distance
             self.get_logger().warn(
                 f"[BRAKING] {closest:.3f}m ahead — speed {self.current_speed:.3f} -> {safe_speed:.3f} m/s"
             )
-
             brake_msg = AckermannDriveStamped()
             brake_msg.drive.speed = safe_speed
-            brake_msg.drive.steering_angle = self.current_steering
+            brake_msg.drive.steering_angle = 0.0
             self.pub.publish(brake_msg)
 
-            if safe_speed == 0.0 and not self.is_stopped_due_to_obstacle:
-                self.is_stopped_due_to_obstacle = True
-                self.stopped_time_start = now
+            # If braking effectively stops the car, start/maintain stuck timer
+            if safe_speed < 0.05:
+                if not self.is_stopped_due_to_obstacle:
+                    self.is_stopped_due_to_obstacle = True
+                    self.stopped_time_start = now
 
             return
 
-        # NEW: If obstacle is gone, reset stuck state
+        # If obstacle is far enough, reset stuck state
         if closest > self.stop_distance + 0.1:
             self.is_stopped_due_to_obstacle = False
             self.stopped_time_start = None
-
-        # PASS THROUGH COMMAND
-        if self.last_cmd_msg is not None:
-            self.pub.publish(self.last_cmd_msg)
 
 
 def main():
