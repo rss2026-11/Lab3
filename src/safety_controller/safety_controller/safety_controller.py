@@ -66,26 +66,120 @@ class SafetyController(Node):
         vy = msg.twist.twist.linear.y
         self.actual_speed = math.sqrt(vx*vx + vy*vy)
 
-    # ---------------------------------------------------------
-    # NEW: Unified braking + reverse timer logic (time‑based)
-    # ---------------------------------------------------------
+    # # ---------------------------------------------------------
+    # # NEW: Unified braking + reverse timer logic (time‑based)
+    # # ---------------------------------------------------------
+    # def publish_brake_with_timer(self, brake_speed):
+    #     """
+    #     Called EVERY time a braking or stop command is needed.
+    #     Tracks braking duration and triggers reverse after 5 seconds.
+    #     """
+
+    #     now = time.time()
+
+    #     # If reverse is active, ignore brake_speed and keep reversing
+    #     if self.reverse_active:
+    #         if now - self.reverse_start_time < 1.0:
+    #             # Still in reverse window → publish reverse
+    #             msg = AckermannDriveStamped()
+    #             msg.drive.speed = -0.8
+    #             msg.drive.steering_angle = 0.0
+    #             self.pub.publish(msg)
+    #             return
+    #         else:
+    #             # Reverse finished
+    #             self.get_logger().info("[REVERSE COMPLETE] Stopping reverse and resetting timers")
+    #             self.reverse_active = False
+    #             self.reverse_start_time = None
+    #             self.brake_active = False
+    #             self.brake_start_time = None
+    #             return
+
+    #     # If we reach here, reverse is NOT active
+
+    #     # Start or continue braking timer
+    #     if not self.brake_active:
+    #         self.brake_active = True
+    #         self.brake_start_time = now
+    #         self.get_logger().info("[BRAKE TIMER] Braking started, timer initialized")
+
+    #     self.brake_duration = now - self.brake_start_time
+
+    #     # If braking has lasted at least 5 seconds → start reverse
+    #     if self.brake_duration >= 5.0:
+    #         self.get_logger().warn("[BACKUP] 5 seconds of braking — starting 1 second reverse at -0.8 m/s")
+    #         self.reverse_active = True
+    #         self.reverse_start_time = now
+
+    #         # Immediately publish first reverse command
+    #         msg = AckermannDriveStamped()
+    #         msg.drive.speed = -0.8
+    #         msg.drive.steering_angle = 0.0
+    #         self.pub.publish(msg)
+    #         return
+
+    #     # Otherwise, just publish the requested brake speed
+    #     msg = AckermannDriveStamped()
+    #     msg.drive.speed = brake_speed
+    #     msg.drive.steering_angle = 0.0
+    #     self.pub.publish(msg)
+
     def publish_brake_with_timer(self, brake_speed):
         """
         Called EVERY time a braking or stop command is needed.
         Tracks braking duration and triggers reverse after 5 seconds.
+        Now includes steering while reversing based on left/right obstacle proximity.
         """
 
         now = time.time()
 
-        # If reverse is active, ignore brake_speed and keep reversing
+        # ---------------------------------------------------------
+        # If reverse is active → steer away from closest obstacle
+        # ---------------------------------------------------------
         if self.reverse_active:
             if now - self.reverse_start_time < 1.0:
-                # Still in reverse window → publish reverse
+
+                # --- Compute steering direction while reversing ---
+                # Use the most recent scan data stored from scan_callback
+                if hasattr(self, "last_scan_ranges") and hasattr(self, "last_scan_angles"):
+
+                    ranges = self.last_scan_ranges
+                    angles = self.last_scan_angles
+
+                    # Same cone definition as scan_callback
+                    cone_center = self.current_steering * 0.5
+                    in_cone = (angles > cone_center - self.half_cone) & \
+                            (angles < cone_center + self.half_cone)
+
+                    cone_ranges = ranges[in_cone]
+                    cone_angles = angles[in_cone]
+
+                    # Split into left/right halves
+                    left_mask  = cone_angles > cone_center
+                    right_mask = cone_angles < cone_center
+
+                    left_min  = np.min(cone_ranges[left_mask])  if np.any(left_mask)  else np.inf
+                    right_min = np.min(cone_ranges[right_mask]) if np.any(right_mask) else np.inf
+
+                    # Steering logic:
+                    # If left is more blocked → steer right (positive angle)
+                    # If right is more blocked → steer left (negative angle)
+                    if left_min < right_min:
+                        steer = +0.4
+                    elif right_min < left_min:
+                        steer = -0.4
+                    else:
+                        steer = 0.0
+                else:
+                    steer = 0.0
+
+                # Publish reverse with steering
                 msg = AckermannDriveStamped()
                 msg.drive.speed = -0.8
-                msg.drive.steering_angle = 0.0
+                msg.drive.steering_angle = steer
                 self.pub.publish(msg)
                 return
+
             else:
                 # Reverse finished
                 self.get_logger().info("[REVERSE COMPLETE] Stopping reverse and resetting timers")
@@ -95,7 +189,9 @@ class SafetyController(Node):
                 self.brake_start_time = None
                 return
 
+        # ---------------------------------------------------------
         # If we reach here, reverse is NOT active
+        # ---------------------------------------------------------
 
         # Start or continue braking timer
         if not self.brake_active:
@@ -105,24 +201,24 @@ class SafetyController(Node):
 
         self.brake_duration = now - self.brake_start_time
 
-        # If braking has lasted at least 5 seconds → start reverse
+        # After 5 seconds → start reverse
         if self.brake_duration >= 5.0:
             self.get_logger().warn("[BACKUP] 5 seconds of braking — starting 1 second reverse at -0.8 m/s")
             self.reverse_active = True
             self.reverse_start_time = now
 
-            # Immediately publish first reverse command
             msg = AckermannDriveStamped()
             msg.drive.speed = -0.8
             msg.drive.steering_angle = 0.0
             self.pub.publish(msg)
             return
 
-        # Otherwise, just publish the requested brake speed
+        # Normal braking
         msg = AckermannDriveStamped()
         msg.drive.speed = brake_speed
         msg.drive.steering_angle = 0.0
         self.pub.publish(msg)
+
 
     # ---------------------------------------------------------
     # Main scan callback
