@@ -43,11 +43,14 @@ class SafetyController(Node):
         self.current_steering = 0.0
         self.actual_speed     = 0.0
         self.last_cmd_speed   = 0.0
+        self.mission_state    = "INIT"
 
-        # NEW: braking counter logic
-        self.brake_counter = 0
-        self.reverse_counter = 0
+        # NEW: time‑based braking + reverse logic
+        self.brake_active = False
+        self.brake_start_time = None
+
         self.reverse_active = False
+        self.reverse_start_time = None
 
     def state_callback(self, msg):
         self.mission_state = msg.data
@@ -63,7 +66,7 @@ class SafetyController(Node):
         self.actual_speed = math.sqrt(vx*vx + vy*vy)
 
     # ---------------------------------------------------------
-    # NEW: Unified braking + reverse timer logic
+    # NEW: Unified braking + reverse timer logic (time‑based)
     # ---------------------------------------------------------
     def publish_brake_with_timer(self, brake_speed):
         """
@@ -71,35 +74,50 @@ class SafetyController(Node):
         Tracks braking duration and triggers reverse after 5 seconds.
         """
 
-        # If reverse is active, ignore braking and continue reversing
-        if self.reverse_active:
-            self.reverse_counter += 1
+        now = time.time()
 
-            if self.reverse_counter >= 10:  # 1 second at 10 Hz
-                self.get_logger().info("[REVERSE COMPLETE] Resetting counters")
+        # If reverse is active, ignore brake_speed and keep reversing
+        if self.reverse_active:
+            if now - self.reverse_start_time < 1.0:
+                # Still in reverse window → publish reverse
+                msg = AckermannDriveStamped()
+                msg.drive.speed = -0.8
+                msg.drive.steering_angle = 0.0
+                self.pub.publish(msg)
+                return
+            else:
+                # Reverse finished
+                self.get_logger().info("[REVERSE COMPLETE] Stopping reverse and resetting timers")
                 self.reverse_active = False
-                self.reverse_counter = 0
-                self.brake_counter = 0
+                self.reverse_start_time = None
+                self.brake_active = False
+                self.brake_start_time = None
                 return
 
-            # Publish reverse command
+        # If we reach here, reverse is NOT active
+
+        # Start or continue braking timer
+        if not self.brake_active:
+            self.brake_active = True
+            self.brake_start_time = now
+            self.get_logger().info("[BRAKE TIMER] Braking started, timer initialized")
+
+        brake_duration = now - self.brake_start_time
+
+        # If braking has lasted at least 5 seconds → start reverse
+        if brake_duration >= 5.0:
+            self.get_logger().warn("[BACKUP] 5 seconds of braking — starting 1 second reverse at -0.8 m/s")
+            self.reverse_active = True
+            self.reverse_start_time = now
+
+            # Immediately publish first reverse command
             msg = AckermannDriveStamped()
             msg.drive.speed = -0.8
             msg.drive.steering_angle = 0.0
             self.pub.publish(msg)
             return
 
-        # If braking is happening, increment counter
-        self.brake_counter += 1
-
-        # 5 seconds at 10 Hz → 50 cycles
-        if self.brake_counter >= 50:
-            self.get_logger().warn("[BACKUP] 5 seconds braking — reversing for 1 second")
-            self.reverse_active = True
-            self.reverse_counter = 0
-            return
-
-        # Normal braking publish
+        # Otherwise, just publish the requested brake speed
         msg = AckermannDriveStamped()
         msg.drive.speed = brake_speed
         msg.drive.steering_angle = 0.0
@@ -109,6 +127,7 @@ class SafetyController(Node):
     # Main scan callback
     # ---------------------------------------------------------
     def scan_callback(self, msg):
+        now = time.time()
 
         # Step 1: Extract ranges
         ranges = np.array(msg.ranges)
@@ -117,16 +136,20 @@ class SafetyController(Node):
         bad = ~np.isfinite(ranges) | (ranges < 0.05)
         ranges[bad] = np.inf
 
-        # Forward cone
+        # Forward cone (you can keep your steering‑based cone if you want)
         cone_center = self.current_steering * 0.5
         in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
 
         cone_ranges = ranges[in_cone]
         cone_angles = angles[in_cone]
 
+        # No obstacle in cone → no braking → reset brake timer
         if len(cone_ranges) == 0:
-            # No obstacle → reset braking counter
-            self.brake_counter = 0
+            if self.brake_active or self.reverse_active:
+                self.get_logger().info("[BRAKE TIMER RESET] No obstacle — resetting timers")
+            self.brake_active = False
+            self.brake_start_time = None
+            # Note: do NOT forcibly cancel reverse here; reverse is time‑based
             return
 
         closest = float(np.min(cone_ranges))
@@ -135,7 +158,7 @@ class SafetyController(Node):
         # HARD STOP
         # ---------------------------------------------------------
         if closest < self.stop_distance:
-            self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m")
+            self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m — requesting stop")
             self.publish_brake_with_timer(0.0)
             return
 
@@ -155,9 +178,13 @@ class SafetyController(Node):
             return
 
         # ---------------------------------------------------------
-        # No braking needed → reset counter
+        # No braking needed → reset brake timer
         # ---------------------------------------------------------
-        self.brake_counter = 0
+        if self.brake_active:
+            self.get_logger().info("[BRAKE TIMER RESET] No longer braking — resetting timer")
+        self.brake_active = False
+        self.brake_start_time = None
+        # Do not touch reverse_active here; reverse is controlled only inside publish_brake_with_timer
 
 
 def main():
@@ -170,6 +197,181 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# import math
+# import numpy as np
+# import rclpy
+# from rclpy.node import Node
+# from sensor_msgs.msg import LaserScan
+# import time
+# from ackermann_msgs.msg import AckermannDriveStamped
+# from nav_msgs.msg import Odometry
+# from std_msgs.msg import String
+
+
+# class SafetyController(Node):
+
+#     def __init__(self):
+#         super().__init__("safety_controller")
+
+#         # Parameters
+#         self.declare_parameter("scan_topic", "/scan")
+#         self.declare_parameter("incoming_cmd_topic", "/vesc/high_level/input/navigation")
+#         self.declare_parameter("safety_output_topic", "/vesc/low_level/input/safety")
+#         self.declare_parameter("stop_distance", 0.4)
+#         self.declare_parameter("half_cone", 0.42)
+#         self.declare_parameter("a_max", 4.0)
+
+#         scan_topic          = self.get_parameter("scan_topic").value
+#         incoming_cmd_topic  = self.get_parameter("incoming_cmd_topic").value
+#         safety_output_topic = self.get_parameter("safety_output_topic").value
+#         self.stop_distance  = self.get_parameter("stop_distance").value
+#         self.half_cone      = self.get_parameter("half_cone").value
+#         self.a_max          = self.get_parameter("a_max").value
+
+#         # Subscribers
+#         self.create_subscription(LaserScan, scan_topic, self.scan_callback, 10)
+#         self.create_subscription(AckermannDriveStamped, incoming_cmd_topic, self.drive_callback, 10)
+#         self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+#         self.create_subscription(String, "/part_b/state", self.state_callback, 10)
+
+#         # Publisher
+#         self.pub = self.create_publisher(AckermannDriveStamped, safety_output_topic, 10)
+
+#         # State
+#         self.current_speed    = 0.0
+#         self.current_steering = 0.0
+#         self.actual_speed     = 0.0
+#         self.last_cmd_speed   = 0.0
+
+#         # NEW: braking counter logic
+#         self.brake_counter = 0
+#         self.reverse_counter = 0
+#         self.reverse_active = False
+
+#     def state_callback(self, msg):
+#         self.mission_state = msg.data
+
+#     def drive_callback(self, msg):
+#         self.current_speed    = msg.drive.speed
+#         self.current_steering = msg.drive.steering_angle
+#         self.last_cmd_speed   = msg.drive.speed
+
+#     def odom_callback(self, msg):
+#         vx = msg.twist.twist.linear.x
+#         vy = msg.twist.twist.linear.y
+#         self.actual_speed = math.sqrt(vx*vx + vy*vy)
+
+#     # ---------------------------------------------------------
+#     # NEW: Unified braking + reverse timer logic
+#     # ---------------------------------------------------------
+#     def publish_brake_with_timer(self, brake_speed):
+#         """
+#         Called EVERY time a braking or stop command is needed.
+#         Tracks braking duration and triggers reverse after 5 seconds.
+#         """
+
+#         # If reverse is active, ignore braking and continue reversing
+#         if self.reverse_active:
+#             self.reverse_counter += 1
+
+#             if self.reverse_counter >= 10:  # 1 second at 10 Hz
+#                 self.get_logger().info("[REVERSE COMPLETE] Resetting counters")
+#                 self.reverse_active = False
+#                 self.reverse_counter = 0
+#                 self.brake_counter = 0
+#                 return
+
+#             # Publish reverse command
+#             msg = AckermannDriveStamped()
+#             msg.drive.speed = -0.8
+#             msg.drive.steering_angle = 0.0
+#             self.pub.publish(msg)
+#             return
+
+#         # If braking is happening, increment counter
+#         self.brake_counter += 1
+
+#         # 5 seconds at 10 Hz → 50 cycles
+#         if self.brake_counter >= 50:
+#             self.get_logger().warn("[BACKUP] 5 seconds braking — reversing for 1 second")
+#             self.reverse_active = True
+#             self.reverse_counter = 0
+#             return
+
+#         # Normal braking publish
+#         msg = AckermannDriveStamped()
+#         msg.drive.speed = brake_speed
+#         msg.drive.steering_angle = 0.0
+#         self.pub.publish(msg)
+
+#     # ---------------------------------------------------------
+#     # Main scan callback
+#     # ---------------------------------------------------------
+#     def scan_callback(self, msg):
+
+#         # Step 1: Extract ranges
+#         ranges = np.array(msg.ranges)
+#         angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
+
+#         bad = ~np.isfinite(ranges) | (ranges < 0.05)
+#         ranges[bad] = np.inf
+
+#         # Forward cone
+#         cone_center = self.current_steering * 0.5
+#         in_cone = (angles > cone_center - self.half_cone) & (angles < cone_center + self.half_cone)
+
+#         cone_ranges = ranges[in_cone]
+#         cone_angles = angles[in_cone]
+
+#         if len(cone_ranges) == 0:
+#             # No obstacle → reset braking counter
+#             self.brake_counter = 0
+#             return
+
+#         closest = float(np.min(cone_ranges))
+
+#         # ---------------------------------------------------------
+#         # HARD STOP
+#         # ---------------------------------------------------------
+#         if closest < self.stop_distance:
+#             self.get_logger().warn(f"[HARD STOP] Obstacle at {closest:.3f}m")
+#             self.publish_brake_with_timer(0.0)
+#             return
+
+#         # ---------------------------------------------------------
+#         # LINEAR BRAKING
+#         # ---------------------------------------------------------
+#         m = 0.1
+#         b = 0.50
+#         brake_distance = self.current_speed * m + b
+
+#         if closest < brake_distance:
+#             safe_speed = self.current_speed * (closest / brake_distance)
+#             if safe_speed < 0.05:
+#                 safe_speed = 0.0
+#             self.get_logger().warn(f"[BRAKING] {closest:.3f}m → {safe_speed:.3f} m/s")
+#             self.publish_brake_with_timer(safe_speed)
+#             return
+
+#         # ---------------------------------------------------------
+#         # No braking needed → reset counter
+#         # ---------------------------------------------------------
+#         self.brake_counter = 0
+
+
+# def main():
+#     rclpy.init()
+#     node = SafetyController()
+#     rclpy.spin(node)
+#     node.destroy_node()
+#     rclpy.shutdown()
+
+
+# if __name__ == "__main__":
+#     main()
 
 
 
