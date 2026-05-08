@@ -175,7 +175,7 @@ class SafetyController(Node):
 
                 # Publish reverse with steering
                 msg = AckermannDriveStamped()
-                msg.drive.speed = -0.8
+                msg.drive.speed = -0.6
                 msg.drive.steering_angle = steer
                 self.pub.publish(msg)
                 return
