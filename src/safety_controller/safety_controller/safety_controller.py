@@ -43,6 +43,7 @@ class SafetyController(Node):
         self.current_steering = 0.0
         self.actual_speed     = 0.0
         self.last_cmd_speed   = 0.0
+        self.brake_duration   = 0.0 
         self.mission_state    = "INIT"
 
         # NEW: time‑based braking + reverse logic
@@ -102,10 +103,10 @@ class SafetyController(Node):
             self.brake_start_time = now
             self.get_logger().info("[BRAKE TIMER] Braking started, timer initialized")
 
-        brake_duration = now - self.brake_start_time
+        self.brake_duration = now - self.brake_start_time
 
         # If braking has lasted at least 5 seconds → start reverse
-        if brake_duration >= 5.0:
+        if self.brake_duration >= 5.0:
             self.get_logger().warn("[BACKUP] 5 seconds of braking — starting 1 second reverse at -0.8 m/s")
             self.reverse_active = True
             self.reverse_start_time = now
@@ -180,10 +181,11 @@ class SafetyController(Node):
         # ---------------------------------------------------------
         # No braking needed → reset brake timer
         # ---------------------------------------------------------
-        if self.brake_active:
+        if self.brake_active and self.brake_duration >= 5.0:
             self.get_logger().info("[BRAKE TIMER RESET] No longer braking — resetting timer")
-        self.brake_active = False
-        self.brake_start_time = None
+            self.brake_active = False
+            self.brake_start_time = None
+            self.brake_duration = 0.0
         # Do not touch reverse_active here; reverse is controlled only inside publish_brake_with_timer
 
 
